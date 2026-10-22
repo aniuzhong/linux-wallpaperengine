@@ -150,8 +150,15 @@ add_subdirectory(src/External/quickjs quickjs)
 if(BUILD_TESTING)
     add_subdirectory(src/External/Catch2)
 endif()
-# try to enable wayland builds when possible
-pkg_check_modules(WAYLAND_SUPPORT wayland-cursor wayland-protocols egl wayland-egl)
+option(ENABLE_WAYLAND "Enable Wayland output support" ON)
+
+if(ENABLE_WAYLAND)
+    pkg_check_modules(WAYLAND_SUPPORT wayland-cursor wayland-protocols egl wayland-egl)
+else()
+    unset(WAYLAND_SUPPORT_FOUND CACHE)
+    set(WAYLAND_SUPPORT_FOUND OFF)
+    message(STATUS "Wayland support disabled")
+endif()
 
 if(WAYLAND_SUPPORT_FOUND)
     find_program(WaylandScanner NAMES wayland-scanner)
@@ -224,6 +231,10 @@ if(X11_FOUND)
         message("X11 support enabled")
         set(X11_SUPPORT_FOUND TRUE)
     endif()
+endif()
+
+if(NOT ENABLE_WAYLAND AND NOT X11_SUPPORT_FOUND)
+    message(FATAL_ERROR "Wayland is disabled and X11 support is unavailable")
 endif()
 
 if(X11_SUPPORT_FOUND)
