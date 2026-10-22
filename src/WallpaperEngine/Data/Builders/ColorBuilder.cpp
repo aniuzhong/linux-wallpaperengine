@@ -2,8 +2,15 @@
 #include "VectorBuilder.h"
 
 #include <algorithm>
-#include <format>
 #include <glm/vec3.hpp>
+#include <version>
+
+#if defined(__cpp_lib_format)
+#include <format>
+#else
+#include <cstdio>
+#include <sstream>
+#endif
 
 const WallpaperEngine::Data::Model::Color WallpaperEngine::Data::Builders::ColorBuilder::White
     = WallpaperEngine::Data::Model::Color (1.0f, 1.0f, 1.0f, 1.0f);
@@ -17,7 +24,7 @@ WallpaperEngine::Data::Builders::ColorBuilder::parse (const std::string& value, 
     // replace the actual separators with spaces to normalize them
     if (copy.find (',') != std::string::npos) {
 	// replace comma separator with spaces so it's
-	std::ranges::replace (copy, ',', ' ');
+	std::replace (copy.begin (), copy.end (), ',', ' ');
     }
 
     // hex colors should be converted to int colors
@@ -27,15 +34,31 @@ WallpaperEngine::Data::Builders::ColorBuilder::parse (const std::string& value, 
 	// expand short css notation into the right one
 	// support for css notation
 	if (number.size () == 3) {
+#if defined(__cpp_lib_format)
 	    number = std::format (
 		"{}{}{}{}{}{}{:02x}", number.at (0), number.at (0), number.at (1), number.at (1), number.at (2),
 		number.at (2), static_cast<int> (alpha * 255)
 	    );
+#else
+	    std::stringstream ss;
+	    ss << number.at (0) << number.at (0) << number.at (1) << number.at (1) << number.at (2) << number.at (2);
+	    char alphaHex[10];
+	    std::snprintf (alphaHex, sizeof (alphaHex), "%02x", static_cast<unsigned int> (alpha * 255));
+	    ss << alphaHex;
+	    number = ss.str ();
+#endif
 	} else if (number.size () == 4) {
+#if defined(__cpp_lib_format)
 	    number = std::format (
 		"{}{}{}{}{}{}{}{}", number.at (0), number.at (0), number.at (1), number.at (1), number.at (2),
 		number.at (2), number.at (3), number.at (3)
 	    );
+#else
+	    std::stringstream ss;
+	    ss << number.at (0) << number.at (0) << number.at (1) << number.at (1) << number.at (2) << number.at (2)
+	       << number.at (3) << number.at (3);
+	    number = ss.str ();
+#endif
 	} else if (number.size () != 6 && number.size () != 8) {
 	    sLog.exception ("Invalid CSS color notation for ", value);
 	}
