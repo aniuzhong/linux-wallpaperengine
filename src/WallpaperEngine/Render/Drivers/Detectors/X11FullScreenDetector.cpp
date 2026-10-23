@@ -1,8 +1,13 @@
 #include "X11FullScreenDetector.h"
 #include "WallpaperEngine/Logging/Log.h"
 
+#include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/Xrandr.h>
+
+#define GLFW_EXPOSE_NATIVE_X11
+#include <GLFW/glfw3.h>
+#include <GLFW/glfw3native.h>
 
 #include "WallpaperEngine/Render/Drivers/GLFWOpenGLDriver.h"
 #include "WallpaperEngine/Render/Drivers/VideoFactories.h"
@@ -51,6 +56,39 @@ X11FullScreenDetector::X11FullScreenDetector (Application::ApplicationContext& a
 
 X11FullScreenDetector::~X11FullScreenDetector () { this->stop (); }
 
+static bool isEwmhFullscreen (Display* display, Window window) {
+    static const Atom netWmState = XInternAtom (display, "_NET_WM_STATE", False);
+    static const Atom fullscreen = XInternAtom (display, "_NET_WM_STATE_FULLSCREEN", False);
+    static const Atom below = XInternAtom (display, "_NET_WM_STATE_BELOW", False);
+
+    Atom actualType = None;
+    int actualFormat = 0;
+    unsigned long nitems = 0, bytesAfter = 0;
+    unsigned char* data = nullptr;
+
+    if (XGetWindowProperty (
+	    display, window, netWmState, 0, 32, False, XA_ATOM, &actualType, &actualFormat, &nitems, &bytesAfter, &data
+	) != Success
+	|| data == nullptr) {
+	return false;
+    }
+
+    bool hasFullscreen = false, hasBelow = false;
+    const auto atoms = reinterpret_cast<const unsigned long*> (data);
+    for (unsigned long i = 0; i < nitems; i++) {
+	if (atoms[i] == static_cast<unsigned long> (fullscreen)) {
+	    hasFullscreen = true;
+	}
+
+	if (atoms[i] == static_cast<unsigned long> (below)) {
+	    hasBelow = true;
+	}
+    }
+
+    XFree (data);
+    return hasFullscreen && !hasBelow;
+}
+
 bool X11FullScreenDetector::anythingFullscreen () const {
     // stop rendering if anything is fullscreen
     bool isFullscreen = false;
@@ -63,7 +101,7 @@ bool X11FullScreenDetector::anythingFullscreen () const {
 	return false;
     }
 
-    const auto ourWindow = reinterpret_cast<Window> (dynamic_cast<GLFWOpenGLDriver&> (this->m_driver).getWindow ());
+    const auto ourWindow = glfwGetX11Window (dynamic_cast<GLFWOpenGLDriver&> (this->m_driver).getWindow ());
     Window parentWindow;
 
     {
@@ -71,11 +109,12 @@ bool X11FullScreenDetector::anythingFullscreen () const {
 	unsigned int num_children;
 
 	if (!XQueryTree (this->m_display, ourWindow, &root, &parentWindow, &schildren, &num_children)) {
+	    XFree (children);
 	    return false;
 	}
 
 	if (schildren) {
-	    XFree (children);
+	    XFree (schildren);
 	}
     }
 
@@ -90,6 +129,11 @@ bool X11FullScreenDetector::anythingFullscreen () const {
 	}
 
 	if (attribs.map_state != IsViewable) {
+	    continue;
+	}
+
+	// only windows in the fullscreen EWMH state count
+	if (!isEwmhFullscreen (this->m_display, children[i])) {
 	    continue;
 	}
 
