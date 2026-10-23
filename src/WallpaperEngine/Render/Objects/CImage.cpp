@@ -183,6 +183,10 @@ CImage::CImage (Wallpapers::CScene& scene, const Image& image) :
     this->registerProperty ("color", *image.color->value);
     this->registerProperty ("parallaxDepth", *image.parallaxDepth->value);
 
+    // passes read g_Color4 through a pointer captured during setupUniforms, so it must hold
+    // the composed value before setup() runs
+    this->updateColor4 ();
+
     // get scene width and height to calculate positions
     auto scene_width = static_cast<float> (scene.getWidth ());
     auto scene_height = static_cast<float> (scene.getHeight ());
@@ -916,6 +920,8 @@ void CImage::render () {
 	return;
     }
 
+    this->updateColor4 ();
+
     glColorMask (true, true, true, true);
 
     // Always update screen transform (handles rotation + parallax dynamically)
@@ -957,7 +963,15 @@ const float& CImage::getAlpha () const { return this->m_image.alpha->value->getF
 
 const glm::vec3& CImage::getColor () const { return this->m_image.color->value->getVec3 (); }
 
-const glm::vec4& CImage::getColor4 () const { return this->m_image.color->value->getVec4 (); }
+const glm::vec4& CImage::getColor4 () const { return this->m_color4; }
+
+void CImage::updateColor4 () {
+    // when the material sets the VERSION combo, genericimage2 swaps g_Brightness/g_UserAlpha for a single
+    // g_Color4, and genericimage3/4 only ever had g_Color4: fold both settings in or they silently stop
+    // applying to those passes
+    this->m_color4 = glm::vec4 { this->m_image.color->value->getVec3 () * this->m_image.brightness->value->getFloat (),
+				 this->m_image.color->value->getVec4 ().a * this->m_image.alpha->value->getFloat () };
+}
 
 const glm::vec3& CImage::getCompositeColor () const { return this->m_image.color->value->getVec3 (); }
 

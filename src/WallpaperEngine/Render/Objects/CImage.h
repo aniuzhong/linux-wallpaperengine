@@ -77,6 +77,7 @@ protected:
 
 private:
     bool loadPuppetMesh (const glm::vec2& size);
+    void updateColor4 ();
     void updatePuppetPositionBuffer (const glm::vec2& size);
     void setupPuppetGeometryCallback (Effects::CPass* pass) const;
     ResolvedTransform updateGeometryBuffers ();
@@ -120,6 +121,8 @@ private:
     std::shared_ptr<const CFBO> m_currentSubFBO = nullptr;
 
     const Image& m_image;
+
+    glm::vec4 m_color4 = glm::vec4 (1.0f);
 
     std::vector<Effects::CPass*> m_passes = {};
     std::vector<MaterialPassUniquePtr> m_virtualPassess = {};
