@@ -3,6 +3,7 @@
 #include "CSound.h"
 
 #include "WallpaperEngine/FileSystem/Container.h"
+#include "WallpaperEngine/Logging/Log.h"
 
 using namespace WallpaperEngine::Render::Objects;
 
@@ -24,8 +25,15 @@ CSound::~CSound () {
 
 void CSound::load () {
     for (const auto& cur : this->m_sound.sounds) {
-	auto stream
-	    = new Audio::AudioStream (this->getScene ().getAudioContext (), this->getAssetLocator ().read (cur));
+	Audio::AudioStream* stream = nullptr;
+
+	// a single broken audio stream must not kill the whole wallpaper
+	try {
+	    stream = new Audio::AudioStream (this->getScene ().getAudioContext (), this->getAssetLocator ().read (cur));
+	} catch (const std::exception& e) {
+	    sLog.error ("Cannot initialize audio stream ", cur, ": ", e.what ());
+	    continue;
+	}
 
 	stream->setRepeat (this->m_sound.playbackmode.has_value () && this->m_sound.playbackmode == "loop");
 
