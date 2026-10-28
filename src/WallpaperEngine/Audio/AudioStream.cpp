@@ -260,11 +260,19 @@ void AudioStream::initialize () {
 	    break;
     }
 
+    // some files (e.g. wavs exported without a channel mask) carry no channel layout,
+    // infer one from the channel count or swr will refuse to initialize
+    int64_t in_channel_layout = this->getContext ()->channel_layout;
+
+    if (in_channel_layout == 0
+	|| av_get_channel_layout_nb_channels (in_channel_layout) != this->getContext ()->channels) {
+	in_channel_layout = av_get_default_channel_layout (this->getContext ()->channels);
+    }
+
     // initialize swrctx
     this->m_swrctx = swr_alloc_set_opts (
 	nullptr, out_channel_layout, this->m_audioContext.getFormat (), this->m_audioContext.getSampleRate (),
-	this->getContext ()->channel_layout, this->getContext ()->sample_fmt, this->getContext ()->sample_rate, 0,
-	nullptr
+	in_channel_layout, this->getContext ()->sample_fmt, this->getContext ()->sample_rate, 0, nullptr
     );
 #else
     AVChannelLayout out_channel_layout;
@@ -287,10 +295,24 @@ void AudioStream::initialize () {
 	sLog.exception ("Cannot get channel layout from mask");
     }
 
+    // some files (e.g. wavs exported without a channel mask) carry no channel layout,
+    // infer one from the channel count or swr will refuse to initialize
+    AVChannelLayout in_channel_layout;
+
+    if (av_channel_layout_copy (&in_channel_layout, &this->m_context->ch_layout) != 0) {
+	sLog.exception ("Cannot copy input channel layout");
+    }
+
+    if (in_channel_layout.order == AV_CHANNEL_ORDER_UNSPEC) {
+	av_channel_layout_default (&in_channel_layout, in_channel_layout.nb_channels);
+    }
+
     swr_alloc_set_opts2 (
 	&this->m_swrctx, &out_channel_layout, this->m_audioContext.getFormat (), this->m_audioContext.getSampleRate (),
-	&this->m_context->ch_layout, this->m_context->sample_fmt, this->m_context->sample_rate, 0, nullptr
+	&in_channel_layout, this->m_context->sample_fmt, this->m_context->sample_rate, 0, nullptr
     );
+
+    av_channel_layout_uninit (&in_channel_layout);
 #endif
 
     if (this->m_swrctx == nullptr) {
@@ -489,7 +511,7 @@ int AudioStream::resampleAudio (uint8_t* out_buf, const int out_size) {
 
     out_nb_channels = av_get_channel_layout_nb_channels (out_channel_layout);
 #else
-    out_nb_channels = this->getContext ()->ch_layout.nb_channels;
+    out_nb_channels = out_channel_layout.nb_channels;
 #endif
     ret = av_samples_alloc_array_and_samples (
 	&resampled_data, &out_linesize, out_nb_channels, out_nb_samples, this->m_audioContext.getFormat (), 0
