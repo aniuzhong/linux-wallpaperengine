@@ -46,12 +46,12 @@ CPass::CPass (
     CRenderable& renderable, std::shared_ptr<const FBOProvider> fboProvider, const MaterialPass& pass,
     std::optional<std::reference_wrapper<const ImageEffectPassOverride>> override,
     std::optional<std::reference_wrapper<const TextureMap>> binds,
-    std::optional<std::reference_wrapper<std::string>> target
+    std::optional<std::reference_wrapper<std::string>> target, bool compositionPass
 ) :
     Helpers::ContextAware (renderable), m_renderable (renderable), m_fboProvider (std::move (fboProvider)),
     m_pass (pass), m_binds (binds.has_value () ? binds.value ().get () : DEFAULT_BINDS),
     m_override (override.has_value () ? override.value ().get () : DEFAULT_OVERRIDE), m_target (target),
-    m_blendingmode (pass.blending), m_vao (GL_NONE) {
+    m_blendingmode (pass.blending), m_isCompositionPass (compositionPass), m_vao (GL_NONE) {
     this->setupShaders ();
     glGenVertexArrays (1, &m_vao);
 }
@@ -861,7 +861,17 @@ void CPass::setupUniforms () {
     this->addUniform ("g_UserAlpha", renderable.getUserAlpha ());
     this->addUniform ("g_Alpha", renderable.getAlpha ());
     this->addUniform ("g_Color", renderable.getColor ());
-    this->addUniform ("g_Color4", renderable.getColor4 ());
+    if (this->m_isCompositionPass) {
+	// the composite FBO sampled by this pass already carries the object's
+	// color/brightness/alpha from the base pass (genericimage2 VERSION 2 folds
+	// them into g_Color4, the legacy path uses g_Brightness/g_UserAlpha);
+	// re-applying g_Color4 here attenuates the layer twice, e.g. alpha 0.1
+	// becomes 0.01 and the layer effectively disappears
+	static const glm::vec4 identityColor4 (1.0f);
+	this->addUniform ("g_Color4", &identityColor4);
+    } else {
+	this->addUniform ("g_Color4", renderable.getColor4 ());
+    }
     if (!this->m_uniforms.contains ("g_CompositeColor")) {
 	this->addUniform ("g_CompositeColor", renderable.getCompositeColor ());
     }

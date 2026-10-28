@@ -27,7 +27,12 @@ public:
 	CRenderable& renderable, std::shared_ptr<const FBOProvider> fboProvider, const MaterialPass& pass,
 	std::optional<std::reference_wrapper<const ImageEffectPassOverride>> override,
 	std::optional<std::reference_wrapper<const TextureMap>> binds,
-	std::optional<std::reference_wrapper<std::string>> target
+	std::optional<std::reference_wrapper<std::string>> target,
+	// engine-added composition passes sample an FBO that already carries the
+	// object's color/brightness/alpha from the base pass, so g_Color4 must not
+	// be applied a second time (setupShaders runs in the constructor, hence a
+	// parameter and not a setter)
+	bool compositionPass = false
     );
     ~CPass ();
 
@@ -185,6 +190,7 @@ private:
     std::map<std::string, UniformEntry*> m_uniforms = {};
     std::map<std::string, ReferenceUniformEntry*> m_referenceUniforms = {};
     BlendingMode m_blendingmode = BlendingMode_Normal;
+    bool m_isCompositionPass = false;
     const glm::mat4* m_modelViewProjectionMatrix;
     const glm::mat4* m_modelViewProjectionMatrixInverse;
     const glm::mat4* m_modelMatrix;

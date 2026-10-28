@@ -764,9 +764,11 @@ void CImage::setup () {
             .textures = {},
         });
 
+	// composition pass: its input FBO already has the object's
+	// color/brightness/alpha applied by the base pass, g_Color4 stays identity
 	this->m_passes.push_back (new CPass (
 	    *this, std::make_shared<FBOProvider> (this), **this->m_materials.colorBlending.material->passes.begin (),
-	    *this->m_materials.colorBlending.override, std::nullopt, std::nullopt
+	    *this->m_materials.colorBlending.override, std::nullopt, std::nullopt, true
 	));
     }
 
