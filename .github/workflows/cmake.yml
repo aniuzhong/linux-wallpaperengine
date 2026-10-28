@@ -22,7 +22,7 @@ on:
 jobs:
   formatting:
     name: Formatting check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Run clang-format style check for C/C++ programs.
@@ -46,13 +46,13 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
 
       # cache some build information
       - name: ccache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@v1.2.24
         with:
           key: ${{ github.job }}-${{ matrix.os }}
 
@@ -88,18 +88,18 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
 
       - name: ccache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@v1.2.24
         with:
           key: ${{ github.job }}-ubuntu-24.04-${{ matrix.build_type }}
 
       - name: Initialize CodeQL
         # Initializes the CodeQL tools for scanning.
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         if: ${{ matrix.build_type == 'Debug' }}
         with:
           languages: 'cpp'
@@ -118,7 +118,7 @@ jobs:
 
       - name: Perform CodeQL Analysis
         if: ${{ matrix.build_type == 'Debug' }}
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
 
   clang-build:
     needs: tests
@@ -136,12 +136,12 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
 
       - name: ccache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@v1.2.24
         with:
           key: ${{ github.job }}-ubuntu-24.04-${{ matrix.build_type }}
 
