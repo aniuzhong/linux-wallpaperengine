@@ -976,7 +976,12 @@ void CImage::updateColor4 () {
 const glm::vec3& CImage::getCompositeColor () const { return this->m_image.color->value->getVec3 (); }
 
 glm::vec2 CImage::resolveGeometrySize (float sceneWidth, float sceneHeight, glm::vec3& origin) const {
-    glm::vec2 size = this->getSize ();
+    // Passthrough materials (composelayer family) bind _rt_FullFrameBuffer as texture 0, so the
+    // texture-based getSize () below resolves to the scene resolution instead of the object's own
+    // extent and the per-frame quad ends up scene-size * scale. The declared size is authoritative
+    // here, mirroring the constructor, which runs before detectTexture () and therefore always
+    // seeded m_pos from image.size.
+    glm::vec2 size = this->getImage ().model->passthrough ? this->getImage ().size : this->getSize ();
 
     if ((size.x == 0.0f || size.y == 0.0f) && this->m_texture != nullptr) {
 	size.x = static_cast<float> (this->m_texture->getRealWidth ());
