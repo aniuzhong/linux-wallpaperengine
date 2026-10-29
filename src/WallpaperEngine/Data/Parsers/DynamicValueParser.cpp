@@ -48,6 +48,10 @@ DynamicValueUniquePtr DynamicValueParser::parse (const json& data, const Propert
 		value->update (static_cast<glm::vec2> (valueIt), DynamicValue::UpdateSource::Initialization);
 	    } else if (size == 3) {
 		value->update (static_cast<glm::vec3> (valueIt), DynamicValue::UpdateSource::Initialization);
+	    } else if (size == 0) {
+		// no numeric tokens: text values and empty/whitespace-only strings
+		// are kept as-is instead of being treated as a vector
+		value->update (str, DynamicValue::UpdateSource::Initialization);
 	    } else {
 		value->update (static_cast<glm::vec4> (valueIt), DynamicValue::UpdateSource::Initialization);
 	    }

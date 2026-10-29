@@ -1,6 +1,10 @@
 #pragma once
 
+#include <cctype>
 #include <cstring>
+#include <string_view>
+#include <vector>
+
 #include <glm/detail/qualifier.hpp>
 #include <glm/detail/type_vec1.hpp>
 #include <string>
@@ -22,6 +26,28 @@ class VectorBuilder {
      */
     template <typename type> static type convert (const char* str);
 
+    /**
+     * Vector literals arrive in two dialects: project.json values use spaces
+     * ("0.1 0.2 0.3") while shader annotation defaults written by Wallpaper
+     * Engine's editor use commas, with or without a trailing space
+     * ("0.10,0.11,0.12" / "0.0, 1.0"). Treat commas and whitespace alike as
+     * separators and split the literal into tokens; callers validate the
+     * token count against the expected vector length.
+     *
+     * @param str
+     * @return
+     */
+    static auto tokenize (std::string_view sv) {
+	static constexpr std::string_view ws = ", \t\n\v\f\r";
+	std::vector<std::string> v;
+	for (auto b = sv.find_first_not_of (ws); b != std::string_view::npos;) {
+	    auto e = sv.find_first_of (ws, b);
+	    v.emplace_back (sv.substr (b, e - b));
+	    b = sv.find_first_not_of (ws, e);
+	}
+	return v;
+    }
+
 public:
     /**
      * Takes the string and returns the vector size (2, 3 or 4)
@@ -32,30 +58,14 @@ public:
      * @return
      */
     static int preparseSize (const std::string& str) {
-	const char* p = str.c_str ();
-	const char* first = strchr (p, ' ');
-	const char* second = first ? strchr (first + 1, ' ') : nullptr;
-	const char* third = second ? strchr (second + 1, ' ') : nullptr;
-
-	if (first == nullptr) {
-	    return 1;
-	}
-
-	if (second == nullptr) {
-	    return 2;
-	}
-
-	if (third == nullptr) {
-	    return 3;
-	}
-
-	return 4;
+	const std::size_t count = tokenize (str).size ();
+	return static_cast<int> (count > 4 ? 4 : count);
     }
 
     /**
      * Takes a string value and parses it into a glm::vec.
-     * This particular parsing uses spaces as separators and basic std::strto* functions
-     * for the actual parsing of the values.
+     * Values can be separated by spaces or commas (any whitespace runs around
+     * them are ignored); exactly one value per vector component is required.
      *
      * @tparam length Vector length
      * @tparam type Vector storage type
@@ -70,50 +80,23 @@ public:
 	// ensure a valid type is used, only 1 to 4 vectors are supported
 	static_assert (length >= 1 && length <= 4, "Invalid vector length");
 
-	const char* p = str.c_str ();
+	const std::vector<std::string> tokens = tokenize (str);
 
-	// get up to 4 spaces
-	const char* first = strchr (p, ' ');
-	const char* second = first ? strchr (first + 1, ' ') : nullptr;
-	const char* third = second ? strchr (second + 1, ' ') : nullptr;
-
-	// validate lengths against what was found in the strings
-	if constexpr (length == 1) {
-	    if (first != nullptr) {
-		sLog.exception ("Invalid vector format: " + str + " (too many values, expected: ", length, ")");
-	    }
-	} else if constexpr (length == 2) {
-	    if (first == nullptr) {
-		sLog.exception ("Invalid vector format: " + str + " (too few values, expected: ", length, ")");
-	    }
-
-	    if (second != nullptr) {
-		sLog.exception ("Invalid vector format: " + str + " (too many values, expected: ", length, ")");
-	    }
-	} else if constexpr (length == 3) {
-	    if (first == nullptr || second == nullptr) {
-		sLog.exception ("Invalid vector format: " + str + " (too few values, expected: ", length, ")");
-	    }
-	    if (third != nullptr) {
-		sLog.exception ("Invalid vector format: " + str + " (too many values, expected: ", length, ")");
-	    }
-	} else if constexpr (length == 4) {
-	    if (first == nullptr || second == nullptr || third == nullptr) {
-		sLog.exception ("Invalid vector format: " + str + " (too few values, expected: ", length, ")");
-	    }
+	if (tokens.size () < static_cast<std::size_t> (length)) {
+	    sLog.exception ("Invalid vector format: " + str + " (too few values, expected: ", length, ")");
 	}
 
-	// lengths validated, values can be used directly without issues
-	if constexpr (length == 1) {
-	    return { convert<type> (p) };
-	} else if constexpr (length == 2) {
-	    return { convert<type> (p), convert<type> (first + 1) };
-	} else if constexpr (length == 3) {
-	    return { convert<type> (p), convert<type> (first + 1), convert<type> (second + 1) };
-	} else if constexpr (length == 4) {
-	    return { convert<type> (p), convert<type> (first + 1), convert<type> (second + 1),
-		     convert<type> (third + 1) };
+	if (tokens.size () > static_cast<std::size_t> (length)) {
+	    sLog.exception ("Invalid vector format: " + str + " (too many values, expected: ", length, ")");
 	}
+
+	// token count validated, values can be used directly without issues
+	glm::vec<length, type, qualifier> result;
+	for (int i = 0; i < length; i++) {
+	    result[i] = convert<type> (tokens[i].c_str ());
+	}
+
+	return result;
     }
     template <typename T, typename std::enable_if_t<is_glm_vec<T>::value, int> = 0>
     [[nodiscard]] static T parse (const std::string& str) {
