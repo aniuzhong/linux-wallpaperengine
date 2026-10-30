@@ -206,7 +206,7 @@ unsigned int CText::computeEffectivePixelSize () const {
     // pointsize, would rasterize glyphs to ~2px on screen (invisible). Rasterize
     // at higher resolution so that after the model scale is applied in render()
     // the on-screen size matches the intended pointsize.
-    const glm::vec3 initialScale = m_text.scale->value->getVec3 ();
+    const glm::vec3 initialScale = this->resolveTransform (this->getObject ()).scale;
     const float avgScale = (initialScale.x + initialScale.y) * 0.5f;
     const float compensate = (avgScale > 0.0f && avgScale < 1.0f) ? std::min (1.0f / avgScale, 32.0f) : 1.0f;
     return std::max<unsigned int> (1u, static_cast<unsigned int> (m_text.pointSize->value->getFloat () * compensate));
@@ -404,20 +404,19 @@ void CText::render () {
 
     const glm::vec4 color = m_text.color->value->getVec4 ();
     const float alpha = m_text.alpha->value->getFloat ();
-    const glm::vec3 scale = m_text.scale->value->getVec3 ();
-    const glm::vec3 origin = m_text.origin->value->getVec3 ();
+    const auto transform = this->resolveTransform (this->getObject ());
+    const glm::vec3& scale = transform.scale;
+    const glm::vec3& origin = transform.origin;
 
-    // WE uses a Y-down coordinate system (origin at top-left, y increases downward).
-    // The final FBO is presented to screen with vflip=true on Wayland/GLFW, which maps
-    // GL y- to screen top and GL y+ to screen bottom. This effectively inverts Y again,
-    // so we need: gl_y = origin.y - scene_h/2  (not the CImage-style scene_h/2 - origin.y).
-    // CImage pre-compensates for X11 (no vflip) and gets corrected by the Wayland vflip.
-    // CText renders with direct vflip-aware coordinates.
+    // WE uses a Y-down scene space (origin at top-left, y increases downward), the
+    // same convention resolveTransform composes parent chains in (matching CImage).
+    // The quad is drawn with an y-up GL translation, so the scene y is mirrored
+    // around the vertical center here.
     const float scene_w = getScene ().getCamera ().getWidth ();
     const float scene_h = getScene ().getCamera ().getHeight ();
     const glm::vec3 gl_origin = {
 	origin.x - scene_w * 0.5f,
-	origin.y - scene_h * 0.5f,
+	scene_h * 0.5f - origin.y,
 	origin.z,
     };
 

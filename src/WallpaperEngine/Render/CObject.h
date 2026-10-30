@@ -2,6 +2,8 @@
 
 #include <string>
 
+#include <glm/glm.hpp>
+
 #include "WallpaperEngine/Render/Helpers/ContextAware.h"
 
 #include "WallpaperEngine/Render/Wallpapers/CScene.h"
@@ -23,6 +25,30 @@ public:
     [[nodiscard]] const AssetLocator& getAssetLocator () const;
     [[nodiscard]] int getId () const;
     [[nodiscard]] const Object& getObject () const;
+
+protected:
+    /**
+     * Composed origin/scale/angle after folding the object's full parent chain
+     * on top of its own local transform.
+     */
+    struct ResolvedTransform {
+	glm::vec3 origin;
+	glm::vec3 scale;
+	float angle;
+    };
+
+    /**
+     * Folds the object's parent chain (bounded, cycle-guarded) into a single
+     * origin/scale/angle. Parents are created before their children
+     * (CScene::createObject), so every link resolves here.
+     */
+    [[nodiscard]] ResolvedTransform resolveTransform (const Object& object) const;
+
+    /**
+     * Computes the object's own transform (origin/scale/angle) without walking the
+     * parent chain. Used as the per-node step of resolveTransform.
+     */
+    [[nodiscard]] static ResolvedTransform localTransform (const Object& object);
 
 private:
     Wallpapers::CScene& m_scene;
