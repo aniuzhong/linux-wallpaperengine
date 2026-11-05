@@ -162,7 +162,12 @@ CScene::CScene (
 	this->m_bloomObjectData = ObjectParser::parse (bloom, scene->project);
 	this->m_bloomObject = this->createObject (*this->m_bloomObjectData);
 
-	this->m_objectsByRenderOrder.push_back (this->m_bloomObject);
+	// createObject() can return null when the object fails to setup (e.g. shader errors),
+	if (this->m_bloomObject != nullptr) {
+	    this->m_objectsByRenderOrder.push_back (this->m_bloomObject);
+	} else {
+	    sLog.error ("Bloom object failed to setup, bloom disabled for this wallpaper");
+	}
     }
 }
 
