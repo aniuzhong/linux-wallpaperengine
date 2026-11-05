@@ -1,0 +1,62 @@
+From 73b13c480fad8696166525e12d02bb3a71fa8a1c Mon Sep 17 00:00:00 2001
+From: Almamu <wpengine@alma.mu>
+Date: Sun, 8 Feb 2026 22:55:06 +0100
+Subject: [PATCH 11/12] 0011: chore: more int to float conversion on
+ assignation [ported to 16.6, EbtUint/EbtInt64 from-switch hunks adapted]
+
+---
+ glslang/MachineIndependent/Intermediate.cpp | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/glslang/MachineIndependent/Intermediate.cpp b/glslang/MachineIndependent/Intermediate.cpp
+index d6045b6..b3d1ee5 100644
+--- a/glslang/MachineIndependent/Intermediate.cpp
++++ b/glslang/MachineIndependent/Intermediate.cpp
+@@ -1631,6 +1631,9 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
+ 						numericFeatures.contains(TNumericFeatures::nv_gpu_shader5_types);
+             case EbtBool:
+                 return getSource() == EShSourceHlsl;
++            case EbtFloat:
++            case EbtDouble:
++                return op == EOpAssign;
+             case EbtInt16:
+             case EbtUint16:
+                 return numericFeatures.contains(TNumericFeatures::gpu_shader_int16) ||
+@@ -1646,7 +1649,6 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
+             case EbtBool:
+                 return getSource() == EShSourceHlsl;
+             case EbtFloat:
+-                return op == EOpAssign;
+             case EbtDouble:
+                 return op == EOpAssign;
+             case EbtInt16:
+@@ -1659,6 +1661,9 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
+             }
+         case EbtUint64:
+             switch (from) {
++            case EbtFloat:
++            case EbtDouble:
++                return op == EOpAssign;
+             case EbtInt:
+             case EbtUint:
+             case EbtInt64:
+@@ -1675,6 +1680,9 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
+             }
+         case EbtInt64:
+             switch (from) {
++            case EbtFloat:
++            case EbtDouble:
++                return op == EOpAssign;
+             case EbtInt:
+                 return true;
+             case EbtInt8:
+@@ -1725,6 +1733,9 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
+             return false;
+         case EbtUint16:
+             switch (from) {
++            case EbtFloat:
++            case EbtDouble:
++                return op == EOpAssign;
+             case EbtInt16:
+                 return numericFeatures.contains(TNumericFeatures::gpu_shader_int16);
+             default:

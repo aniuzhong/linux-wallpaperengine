@@ -1,0 +1,33 @@
+From 74f98ac50a4a9cc8edc7bc52f09382f5cdfba721 Mon Sep 17 00:00:00 2001
+From: Almamu <wpengine@alma.mu>
+Date: Sat, 19 Apr 2025 22:08:34 +0200
+Subject: [PATCH] port WallpaperEngine fork patch onto MoltenVK-1.1.5
+
+Equivalent re-application of Almamu/SPIRV-Cross-WallpaperEngine ad4d0222:
+wrap access-chain indexes in int(...) on GLSL generation. Upstream refactored
+this function (ptr-chain split logic moved), port keeps 1.1.5 structure.
+---
+ spirv_glsl.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/spirv_glsl.cpp b/spirv_glsl.cpp
+index c5550ee..71f9c13 100644
+--- a/spirv_glsl.cpp
++++ b/spirv_glsl.cpp
+@@ -8526,14 +8526,14 @@ void CompilerGLSL::access_chain_internal_append_index(std::string &expr, uint32_
+ 	bool index_is_literal = (flags & ACCESS_CHAIN_INDEX_IS_LITERAL_BIT) != 0;
+ 	bool register_expression_read = (flags & ACCESS_CHAIN_SKIP_REGISTER_EXPRESSION_READ_BIT) == 0;
+ 
+-	expr += "[";
++	expr += "[int(";
+ 
+ 	if (index_is_literal)
+ 		expr += convert_to_string(index);
+ 	else
+ 		expr += to_expression(index, register_expression_read);
+ 
+-	expr += "]";
++	expr += ")]";
+ }
+ 
+ bool CompilerGLSL::access_chain_needs_stage_io_builtin_translation(uint32_t)

@@ -1,0 +1,67 @@
+From 8722a0144b54d3fba4a1b2cdaf70357ac238cb21 Mon Sep 17 00:00:00 2001
+From: Almamu <wpengine@alma.mu>
+Date: Sun, 6 Apr 2025 10:25:10 +0200
+Subject: [PATCH 04/12] 0004: chore: improve function call matching and
+ fallback to [ported to 16.6]
+
+---
+ glslang/MachineIndependent/ParseHelper.cpp | 46 ++++++++++++++++++++++
+ 1 file changed, 46 insertions(+)
+
+diff --git a/glslang/MachineIndependent/ParseHelper.cpp b/glslang/MachineIndependent/ParseHelper.cpp
+index 5f0accc..307786d 100644
+--- a/glslang/MachineIndependent/ParseHelper.cpp
++++ b/glslang/MachineIndependent/ParseHelper.cpp
+@@ -8977,6 +8977,52 @@ const TFunction* TParseContext::findFunction120(const TSourceLoc& loc, const TFu
+     TVector<const TFunction*> candidateList;
+     symbolTable.findFunctionNameList(call.getMangledName(), candidateList, builtIn);
+ 
++    // first apply old algorithm, which is a bit more strict, if nothing is found then apply the second version
++    for (auto it = candidateList.begin(); it != candidateList.end(); ++it) {
++        const TFunction& function = *(*it);
++
++        // to even be a potential match, number of arguments has to match
++        if (call.getParamCount() != function.getParamCount())
++            continue;
++
++        bool possibleMatch = true;
++        for (int i = 0; i < function.getParamCount(); ++i) {
++            // same types is easy
++            if (*function[i].type == *call[i].type)
++                continue;
++
++            // We have a mismatch in type, see if it is implicitly convertible
++
++            if (function[i].type->isArray() || call[i].type->isArray() || ! function[i].type->sameElementShape(*call[i].type))
++                possibleMatch = false;
++            else {
++                // do direction-specific checks for conversion of basic type
++                if (function[i].type->getQualifier().isParamInput()) {
++                    if (! intermediate.canImplicitlyPromote(call[i].type->getBasicType(), function[i].type->getBasicType()))
++                        possibleMatch = false;
++                }
++                if (function[i].type->getQualifier().isParamOutput()) {
++                    if (! intermediate.canImplicitlyPromote(function[i].type->getBasicType(), call[i].type->getBasicType()))
++                        possibleMatch = false;
++                }
++            }
++            if (! possibleMatch)
++                break;
++        }
++        if (possibleMatch) {
++            if (candidate) {
++                // our second match, meaning ambiguity
++                error(loc, "ambiguous function signature match: multiple signatures match under implicit (but strict) type conversion", call.getName().c_str(), "");
++            } else
++                candidate = &function;
++        }
++    }
++
++    if (candidate) {
++        return candidate;
++    }
++
++    // TODO: MAYBE THIS NEEDS SOME EXTRA WORK
+     for (auto it = candidateList.begin(); it != candidateList.end(); ++it) {
+         const TFunction& function = *(*it);
+ 

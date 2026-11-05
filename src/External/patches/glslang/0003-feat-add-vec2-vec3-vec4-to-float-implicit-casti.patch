@@ -1,0 +1,89 @@
+From 453d2ee2fa3a8573c0c7f6b380348ce19dac2b63 Mon Sep 17 00:00:00 2001
+From: Almamu <wpengine@alma.mu>
+Date: Sat, 5 Apr 2025 06:01:09 +0200
+Subject: [PATCH 03/12] 0003: feat: add vec2/vec3/vec4 to float implicit
+ casting [ported to 16.6, swizzle hunk adapted]
+
+---
+ glslang/Include/Types.h                         | 17 +++++++++++++++++
+ glslang/MachineIndependent/Intermediate.cpp     |  2 ++
+ glslang/MachineIndependent/ParseContextBase.cpp |  8 +++++---
+ glslang/MachineIndependent/localintermediate.h  |  5 +++++
+ 4 files changed, 29 insertions(+), 3 deletions(-)
+
+diff --git a/glslang/Include/Types.h b/glslang/Include/Types.h
+index d5bcf46..3cb7281 100644
+--- a/glslang/Include/Types.h
++++ b/glslang/Include/Types.h
+@@ -2840,6 +2840,23 @@ public:
+         return false;
+     }
+ 
++    bool canUseVecXForFloatType(const TType& right, int* lpidx = nullptr, int* rpidx = nullptr) const
++    {
++        // Initialize error to general type mismatch.
++        if (lpidx != nullptr) {
++            *lpidx = -1;
++            *rpidx = -1;
++        }
++
++        if (this->basicType != right.basicType)
++            return false;
++
++        if (this->isVector() && !right.isVector())
++            return true;
++
++        return false;
++    }
++
+     // Do two structure types match?  They could be declared independently,
+     // in different places, but still might satisfy the definition of matching.
+     // From the spec:
+diff --git a/glslang/MachineIndependent/Intermediate.cpp b/glslang/MachineIndependent/Intermediate.cpp
+index af8149f..a766ac6 100644
+--- a/glslang/MachineIndependent/Intermediate.cpp
++++ b/glslang/MachineIndependent/Intermediate.cpp
+@@ -968,6 +968,8 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
+         // add vec conversion like in EOpAssign
+         if (node->getType().canUseVecConstructorForHigherType(type))
+             return addShapeConversion (type, node);
++        if (node->getType().canUseVecXForFloatType(type))
++            return addShapeConversion (type, node);
+         if (type.getBasicType() == node->getType().getBasicType())
+             return node;
+ 
+diff --git a/glslang/MachineIndependent/ParseContextBase.cpp b/glslang/MachineIndependent/ParseContextBase.cpp
+index e43cf51..baad8fa 100644
+--- a/glslang/MachineIndependent/ParseContextBase.cpp
++++ b/glslang/MachineIndependent/ParseContextBase.cpp
+@@ -616,9 +616,11 @@ void TParseContextBase::parseSwizzleSelector(const TSourceLoc& loc, const TStrin
+         }
+ 
+         if (selector[i] >= vecSize) {
+-            error(loc, "vector swizzle selection out of range",  compString.c_str(), "");
+-            selector.resize(i);
+-            break;
++            warn(loc, "vector swizzle selection out of range",  compString.c_str(), "guessing right values");
++            // adjusts the value to the maximum fields of the vector
++            // vec2.zw will be vec2.xy
++            // vec3.w will be vec3.x and so on
++            selector[i] %= vecSize;
+         }
+ 
+         if (i > 0 && fieldSet[i] != fieldSet[i-1]) {
+diff --git a/glslang/MachineIndependent/localintermediate.h b/glslang/MachineIndependent/localintermediate.h
+index c5af0bd..84f39fe 100644
+--- a/glslang/MachineIndependent/localintermediate.h
++++ b/glslang/MachineIndependent/localintermediate.h
+@@ -80,6 +80,11 @@ public:
+         size_ = s;
+     }
+     int size() const { return size_; }
++    selectorType& operator[](int i)
++    {
++        assert(i < MaxSwizzleSelectors);
++        return components[i];
++    }
+     selectorType operator[](int i) const
+     {
+         assert(i < MaxSwizzleSelectors);

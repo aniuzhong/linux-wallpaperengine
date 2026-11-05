@@ -1,0 +1,27 @@
+From 1d0cad825ef7a01d4cef7c07694f7329e990c92b Mon Sep 17 00:00:00 2001
+From: Almamu <wpengine@alma.mu>
+Date: Sat, 19 Apr 2025 22:08:35 +0200
+Subject: [PATCH 05/12] 0005: chore: allow array indexes to be non-integer
+ values and [ported to 16.6]
+
+---
+ glslang/MachineIndependent/ParseHelper.cpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/glslang/MachineIndependent/ParseHelper.cpp b/glslang/MachineIndependent/ParseHelper.cpp
+index 307786d..a512af0 100644
+--- a/glslang/MachineIndependent/ParseHelper.cpp
++++ b/glslang/MachineIndependent/ParseHelper.cpp
+@@ -4697,6 +4697,12 @@ void TParseContext::integerCheck(const TIntermTyped* node, const char* token)
+          intermediate.canImplicitlyPromote(from_type, EbtUint, EOpNull)) && node->isScalar())
+         return;
+ 
++    // special case for [] arrays, i don't like the idea of modifying the generated code
++    // and don't want to spend the time to look into it
++    if (strncmp (token, "[]", 2) == 0 && from_type == EbtFloat) {
++        return;
++    }
++
+     error(node->getLoc(), "scalar integer expression required", token, "");
+ }
+ 

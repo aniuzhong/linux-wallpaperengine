@@ -1,0 +1,25 @@
+From 36ccd267c845e8865d974bf133d7077bfec733ef Mon Sep 17 00:00:00 2001
+From: Almamu <wpengine@alma.mu>
+Date: Sun, 8 Feb 2026 21:23:56 +0100
+Subject: [PATCH 10/12] 0010: chore: int to float conversion on assignation
+ should be [ported to 16.6, EbtInt from-switch hunk adapted]
+
+---
+ glslang/MachineIndependent/Intermediate.cpp | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/glslang/MachineIndependent/Intermediate.cpp b/glslang/MachineIndependent/Intermediate.cpp
+index 10e1c05..d6045b6 100644
+--- a/glslang/MachineIndependent/Intermediate.cpp
++++ b/glslang/MachineIndependent/Intermediate.cpp
+@@ -1645,6 +1645,10 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
+             switch (from) {
+             case EbtBool:
+                 return getSource() == EShSourceHlsl;
++            case EbtFloat:
++                return op == EOpAssign;
++            case EbtDouble:
++                return op == EOpAssign;
+             case EbtInt16:
+                 return numericFeatures.contains(TNumericFeatures::gpu_shader_int16) ||
+                        numericFeatures.contains(TNumericFeatures::nv_gpu_shader5_types);

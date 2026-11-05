@@ -1,0 +1,74 @@
+From b9e7fe775ae9d1c6e533569f4b39a29d4f364667 Mon Sep 17 00:00:00 2001
+From: Almamu <wpengine@alma.mu>
+Date: Sun, 8 Feb 2026 23:24:36 +0100
+Subject: [PATCH 12/12] 0012: chore: more int conversions (float and uint)
+ [ported to 16.6, three widen hunks adapted]
+
+---
+ glslang/MachineIndependent/Intermediate.cpp | 15 ++++++++++-----
+ 1 file changed, 10 insertions(+), 5 deletions(-)
+
+diff --git a/glslang/MachineIndependent/Intermediate.cpp b/glslang/MachineIndependent/Intermediate.cpp
+index b3d1ee5..92ab787 100644
+--- a/glslang/MachineIndependent/Intermediate.cpp
++++ b/glslang/MachineIndependent/Intermediate.cpp
+@@ -1633,7 +1633,7 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
+                 return getSource() == EShSourceHlsl;
+             case EbtFloat:
+             case EbtDouble:
+-                return op == EOpAssign;
++                return op == EOpAssign || op == EOpAdd || op == EOpSub || op == EOpMul || op == EOpDiv || op == EOpMod || op == EOpMulAssign;
+             case EbtInt16:
+             case EbtUint16:
+                 return numericFeatures.contains(TNumericFeatures::gpu_shader_int16) ||
+@@ -1650,10 +1650,12 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
+                 return getSource() == EShSourceHlsl;
+             case EbtFloat:
+             case EbtDouble:
+-                return op == EOpAssign;
++                return op == EOpAssign || op == EOpAdd || op == EOpSub || op == EOpMul || op == EOpDiv || op == EOpMod || op == EOpMulAssign;
+             case EbtInt16:
+                 return numericFeatures.contains(TNumericFeatures::gpu_shader_int16) ||
+                        numericFeatures.contains(TNumericFeatures::nv_gpu_shader5_types);
++            case EbtUint:
++                return op == EOpAssign || op == EOpAdd || op == EOpSub || op == EOpMul || op == EOpDiv || op == EOpMod || op == EOpMulAssign;
+             case EbtInt8:
+                 return numericFeatures.contains(TNumericFeatures::nv_gpu_shader5_types);
+             default:
+@@ -1663,7 +1665,7 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
+             switch (from) {
+             case EbtFloat:
+             case EbtDouble:
+-                return op == EOpAssign;
++                return op == EOpAssign || op == EOpAdd || op == EOpSub || op == EOpMul || op == EOpDiv || op == EOpMod || op == EOpMulAssign;
+             case EbtInt:
+             case EbtUint:
+             case EbtInt64:
+@@ -1682,7 +1684,7 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
+             switch (from) {
+             case EbtFloat:
+             case EbtDouble:
+-                return op == EOpAssign;
++                return op == EOpAssign || op == EOpAdd || op == EOpSub || op == EOpMul || op == EOpDiv || op == EOpMod || op == EOpMulAssign;
+             case EbtInt:
+                 return true;
+             case EbtInt8:
+@@ -1735,7 +1737,7 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
+             switch (from) {
+             case EbtFloat:
+             case EbtDouble:
+-                return op == EOpAssign;
++                return op == EOpAssign || op == EOpAdd || op == EOpSub || op == EOpMul || op == EOpDiv || op == EOpMod || op == EOpMulAssign;
+             case EbtInt16:
+                 return numericFeatures.contains(TNumericFeatures::gpu_shader_int16);
+             default:
+@@ -3567,6 +3569,9 @@ bool TIntermediate::promoteBinary(TIntermBinary& node)
+         if (getSource() == EShSourceHlsl)
+             break;
+ 
++        // Check for the same types, this should be allowed 100%
++        if (left->getBasicType() == right->getBasicType())
++            return true;
+         // Check for integer-only operands.
+         if (!isTypeInt(left->getBasicType()) && !isTypeInt(right->getBasicType()))
+             return false;

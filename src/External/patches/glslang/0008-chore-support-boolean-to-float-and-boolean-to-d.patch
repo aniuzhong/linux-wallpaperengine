@@ -1,0 +1,51 @@
+From e54129675669792229b081585e4b3c8fb0e78db9 Mon Sep 17 00:00:00 2001
+From: Almamu <wpengine@alma.mu>
+Date: Sun, 8 Feb 2026 20:24:21 +0100
+Subject: [PATCH 08/12] 0008: chore: support boolean to float, and boolean to
+ double [ported to 16.6, EbtFloat<-EbtBool hunk adapted]
+
+---
+ glslang/MachineIndependent/Intermediate.cpp | 4 +++-
+ glslang/MachineIndependent/ParseHelper.cpp  | 7 +++++++
+ 2 files changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/glslang/MachineIndependent/Intermediate.cpp b/glslang/MachineIndependent/Intermediate.cpp
+index a766ac6..97cc554 100644
+--- a/glslang/MachineIndependent/Intermediate.cpp
++++ b/glslang/MachineIndependent/Intermediate.cpp
+@@ -1563,6 +1563,8 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
+         switch (to) {
+         case EbtDouble:
+             switch (from) {
++            case EbtBool:
++                    return true;
+             case EbtInt:
+             case EbtUint:
+             case EbtInt64:
+@@ -1598,7 +1600,7 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
+             case EbtUint:
+                  return true;
+             case EbtBool:
+-                 return getSource() == EShSourceHlsl;
++                 return true;
+             case EbtInt16:
+             case EbtUint16:
+                 return numericFeatures.contains(TNumericFeatures::gpu_shader_int16) ||
+diff --git a/glslang/MachineIndependent/ParseHelper.cpp b/glslang/MachineIndependent/ParseHelper.cpp
+index b0cf964..ca54c44 100644
+--- a/glslang/MachineIndependent/ParseHelper.cpp
++++ b/glslang/MachineIndependent/ParseHelper.cpp
+@@ -961,6 +961,13 @@ TIntermTyped* TParseContext::handleBinaryMath(const TSourceLoc& loc, const char*
+         allowed = false;
+     }
+ 
++    if (
++        (left->getType().containsBasicType(EbtBool) && right->getType().containsBasicType(EbtFloat)) ||
++        (left->getType().containsBasicType(EbtBool) && right->getType().containsBasicType(EbtDouble))
++    ) {
++        allowed = true;
++    }
++
+     TIntermTyped* result = nullptr;
+     if (allowed) {
+         if ((left->isReference() || right->isReference()))

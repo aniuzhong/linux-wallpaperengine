@@ -1,0 +1,118 @@
+From 244a1ece124d38424a22b7a7912a4cb771cfac5a Mon Sep 17 00:00:00 2001
+From: Almamu <wpengine@alma.mu>
+Date: Sun, 17 Aug 2025 19:12:15 +0200
+Subject: [PATCH 09/12] 0009: chore: allow implicit conversion from ints to
+ boolean [ported to 16.6]
+
+---
+ glslang/MachineIndependent/Intermediate.cpp | 35 ++++++++++++++++
+ glslang/MachineIndependent/ParseHelper.cpp  | 44 ++++++++++++++++++++-
+ 2 files changed, 77 insertions(+), 2 deletions(-)
+
+diff --git a/glslang/MachineIndependent/Intermediate.cpp b/glslang/MachineIndependent/Intermediate.cpp
+index 97cc554..10e1c05 100644
+--- a/glslang/MachineIndependent/Intermediate.cpp
++++ b/glslang/MachineIndependent/Intermediate.cpp
+@@ -2545,6 +2545,41 @@ TIntermTyped* TIntermediate::addSelection(TIntermTyped* cond, TIntermTyped* true
+             return falseBlock;
+     }
+ 
++    if (cond->getBasicType() != EbtBool) {
++        TIntermTyped* comparisonAgainst;
++
++        switch (cond->getBasicType()) {
++            case EbtUint8:
++                comparisonAgainst = addConstantUnion((unsigned char)0, loc);
++                break;
++            case EbtInt8:
++                comparisonAgainst = addConstantUnion((char)0, loc);
++                break;
++            case EbtUint16:
++                comparisonAgainst = addConstantUnion((unsigned short)0, loc);
++                break;
++            case EbtInt16:
++                comparisonAgainst = addConstantUnion((short)0, loc);
++                break;
++            case EbtInt:
++                comparisonAgainst = addConstantUnion((int)0, loc);
++                break;
++            case EbtUint:
++                comparisonAgainst = addConstantUnion((unsigned int)0, loc);
++                break;
++            case EbtInt64:
++                comparisonAgainst = addConstantUnion((long long)0, loc);
++                break;
++            case EbtUint64:
++                comparisonAgainst = addConstantUnion((unsigned long long)0, loc);
++                break;
++            default:
++                return nullptr;
++        }
++
++        // convert the value to a comparison against specific value
++        cond = addBinaryMath(EOpGreaterThan, cond, comparisonAgainst, loc);
++    }
+     //
+     // Make a selection node.
+     //
+diff --git a/glslang/MachineIndependent/ParseHelper.cpp b/glslang/MachineIndependent/ParseHelper.cpp
+index ca54c44..08f3037 100644
+--- a/glslang/MachineIndependent/ParseHelper.cpp
++++ b/glslang/MachineIndependent/ParseHelper.cpp
+@@ -5382,14 +5382,54 @@ bool TParseContext::voidErrorCheck(const TSourceLoc& loc, const TString& identif
+ // Checks to see if the node (for the expression) contains a scalar boolean expression or not
+ void TParseContext::boolCheck(const TSourceLoc& loc, const TIntermTyped* type)
+ {
+-    if (type->getBasicType() != EbtBool || type->isArray() || type->isMatrix() || type->isVector())
++    bool isValidType = false;
++
++    switch (type->getBasicType()) {
++        case EbtBool:
++        case EbtInt:
++        case EbtUint:
++        case EbtUint8:
++        case EbtUint16:
++        case EbtUint64:
++        case EbtInt16:
++        case EbtInt8:
++        case EbtInt64:
++            isValidType = true;
++            break;
++
++        default:
++            isValidType = false;
++            break;
++    }
++
++    if (!isValidType || type->isArray() || type->isMatrix() || type->isVector())
+         error(loc, "boolean expression expected", "", "");
+ }
+ 
+ // This function checks to see if the node (for the expression) contains a scalar boolean expression or not
+ void TParseContext::boolCheck(const TSourceLoc& loc, const TPublicType& pType)
+ {
+-    if (pType.basicType != EbtBool || pType.arraySizes || pType.matrixCols > 1 || (pType.vectorSize > 1))
++    bool isValidType = false;
++
++    switch (pType.basicType) {
++        case EbtBool:
++        case EbtInt:
++        case EbtUint:
++        case EbtUint8:
++        case EbtUint16:
++        case EbtUint64:
++        case EbtInt16:
++        case EbtInt8:
++        case EbtInt64:
++            isValidType = true;
++            break;
++
++        default:
++            isValidType = false;
++            break;
++    }
++
++    if (!isValidType || pType.arraySizes || pType.matrixCols > 1 || (pType.vectorSize > 1))
+         error(loc, "boolean expression expected", "", "");
+ }
+ 

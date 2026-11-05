@@ -1,0 +1,87 @@
+From 61ddc8fd42975fcf2b8dba93d28307bd98eea096 Mon Sep 17 00:00:00 2001
+From: Almamu <wpengine@alma.mu>
+Date: Fri, 4 Apr 2025 02:32:11 +0200
+Subject: [PATCH 02/12] 0002: feat: better casting support
+ float/double/int/uint [ported to 16.6, promoteBinary rework hunk adapted:
+ handling lives in addConversion, EOpAssign keeps upstream form]
+
+---
+ glslang/Include/Types.h                     | 18 ++++++++++++++++++
+ glslang/MachineIndependent/Intermediate.cpp |  8 ++++----
+ glslang/MachineIndependent/ParseHelper.cpp  |  6 ++++--
+ 3 files changed, 26 insertions(+), 6 deletions(-)
+
+diff --git a/glslang/Include/Types.h b/glslang/Include/Types.h
+index 2d8eec7..d5bcf46 100644
+--- a/glslang/Include/Types.h
++++ b/glslang/Include/Types.h
+@@ -2821,6 +2821,24 @@ public:
+         return false;
+     }
+ 
++    // ALMAMU: CUSTOM TYPECASTING CHECKS FOR FUNCTION CALLS
++    //
++    bool canUseVecConstructorForHigherType(const TType& right, int* lpidx = nullptr, int* rpidx = nullptr) const
++    {
++        // Initialize error to general type mismatch.
++        if (lpidx != nullptr) {
++            *lpidx = -1;
++            *rpidx = -1;
++        }
++
++        if (this->basicType != right.basicType)
++            return false;
++
++        if (!this->isVector() && right.isVector())
++            return true;
++
++        return false;
++    }
+ 
+     // Do two structure types match?  They could be declared independently,
+     // in different places, but still might satisfy the definition of matching.
+diff --git a/glslang/MachineIndependent/Intermediate.cpp b/glslang/MachineIndependent/Intermediate.cpp
+index 89a7be7..af8149f 100644
+--- a/glslang/MachineIndependent/Intermediate.cpp
++++ b/glslang/MachineIndependent/Intermediate.cpp
+@@ -965,6 +965,9 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
+                 return nullptr;
+         }
+ 
++        // add vec conversion like in EOpAssign
++        if (node->getType().canUseVecConstructorForHigherType(type))
++            return addShapeConversion (type, node);
+         if (type.getBasicType() == node->getType().getBasicType())
+             return node;
+ 
+@@ -3764,10 +3767,7 @@ bool TIntermediate::promoteBinary(TIntermBinary& node)
+         break;
+ 
+     case EOpAssign:
+-        if (left->isVector() && !right->isVector() && left->getBasicType() == right->getBasicType()) {
+-            right = addShapeConversion(left->getType(), right);
+-            node.setRight(right);
+-        } else if ((left->getVectorSize() != right->getVectorSize() || left->getMatrixCols() != right->getMatrixCols() || left->getMatrixRows() != right->getMatrixRows()) &&
++        if ((left->getVectorSize() != right->getVectorSize() || left->getMatrixCols() != right->getMatrixCols() || left->getMatrixRows() != right->getMatrixRows()) &&
+             !vectorAndLongVectorMatch)
+             return false;
+         [[fallthrough]];
+diff --git a/glslang/MachineIndependent/ParseHelper.cpp b/glslang/MachineIndependent/ParseHelper.cpp
+index ec6d553..5f0accc 100644
+--- a/glslang/MachineIndependent/ParseHelper.cpp
++++ b/glslang/MachineIndependent/ParseHelper.cpp
+@@ -8992,10 +8992,12 @@ const TFunction* TParseContext::findFunction120(const TSourceLoc& loc, const TFu
+ 
+             // We have a mismatch in type, see if it is implicitly convertible
+ 
+-            if (function[i].type->isArray() || call[i].type->isArray() ||
+-                ! function[i].type->sameElementShape(*call[i].type))
++            if (function[i].type->isArray() || call[i].type->isArray())
+                 possibleMatch = false;
+             else {
++                if (! function[i].type->sameElementShape(*call[i].type) && !call[i].type->canUseVecConstructorForHigherType(*function[i].type)) {
++                    possibleMatch = false;
++                }
+                 // do direction-specific checks for conversion of basic type
+                 if (function[i].type->getQualifier().isParamInput()) {
+                     if (! intermediate.canImplicitlyPromote(call[i].type->getBasicType(), function[i].type->getBasicType()))

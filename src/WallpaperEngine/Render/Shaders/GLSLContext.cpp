@@ -3,13 +3,27 @@
 
 #include <cassert>
 #include <memory>
+#include <type_traits>
+#include <utility>
 
 #include "SPIRV/GlslangToSpv.h"
 #include "glslang/Include/ResourceLimits.h"
+#include "glslang/Include/Types.h"
 #include "glslang/Public/ShaderLang.h"
 #include "spirv_glsl.hpp"
 
 using namespace WallpaperEngine::Render::Shaders;
+
+// compile-time guard for the patch series: the shader-compatibility patches add
+// canUseVecConstructorForHigherType() to glslang's TType.
+template <typename T, typename = void> struct WallpaperEnginePatchesPresent : std::false_type { };
+template <typename T>
+struct WallpaperEnginePatchesPresent<
+    T, std::void_t<decltype (std::declval<const T&> ().canUseVecConstructorForHigherType (std::declval<const T&> ()))>>
+    : std::true_type { };
+static_assert (
+    WallpaperEnginePatchesPresent<glslang::TType>::value, "glslang is missing the Wallpaper Engine patch series"
+);
 
 TBuiltInResource BuiltInResource = { .maxLights = 32,
 				     .maxClipPlanes = 6,

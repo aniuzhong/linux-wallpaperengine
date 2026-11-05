@@ -1,0 +1,90 @@
+From 35ae84c303f0a1cc031e51229708ea15b2582722 Mon Sep 17 00:00:00 2001
+From: Almamu <wpengine@alma.mu>
+Date: Tue, 22 Apr 2025 04:28:22 +0200
+Subject: [PATCH 07/12] 0007: chore: detect down-casting of parameters on
+ function [ported to 16.6, requiresCasts hunk placed in second findFunction120
+ block]
+
+---
+ glslang/Include/Types.h                    |  2 ++
+ glslang/MachineIndependent/ParseHelper.cpp | 26 ++++++++++++++++++----
+ 2 files changed, 24 insertions(+), 4 deletions(-)
+
+diff --git a/glslang/Include/Types.h b/glslang/Include/Types.h
+index 3cb7281..b95d0c0 100644
+--- a/glslang/Include/Types.h
++++ b/glslang/Include/Types.h
+@@ -2836,6 +2836,8 @@ public:
+ 
+         if (!this->isVector() && right.isVector())
+             return true;
++        if (this->isVector() && right.isVector() && this->vectorSize > right.vectorSize)
++            return true;
+ 
+         return false;
+     }
+diff --git a/glslang/MachineIndependent/ParseHelper.cpp b/glslang/MachineIndependent/ParseHelper.cpp
+index a512af0..b0cf964 100644
+--- a/glslang/MachineIndependent/ParseHelper.cpp
++++ b/glslang/MachineIndependent/ParseHelper.cpp
+@@ -9028,6 +9028,8 @@ const TFunction* TParseContext::findFunction120(const TSourceLoc& loc, const TFu
+         return candidate;
+     }
+ 
++    int matchWithSameCasts = 0;
++    int matchRequiredCasts = INT_MAX;
+     // TODO: MAYBE THIS NEEDS SOME EXTRA WORK
+     for (auto it = candidateList.begin(); it != candidateList.end(); ++it) {
+         const TFunction& function = *(*it);
+@@ -9036,6 +9038,7 @@ const TFunction* TParseContext::findFunction120(const TSourceLoc& loc, const TFu
+         if (call.getParamCount() != function.getParamCount())
+             continue;
+ 
++        int requiresCasts = 0;
+         bool possibleMatch = true;
+         for (int i = 0; i < function.getParamCount(); ++i) {
+             // same types is easy
+@@ -9047,9 +9050,14 @@ const TFunction* TParseContext::findFunction120(const TSourceLoc& loc, const TFu
+             if (function[i].type->isArray() || call[i].type->isArray())
+                 possibleMatch = false;
+             else {
++                // if a candidate was already found and we match through the implicit promotion
++                // just don't mark it as a match, so the call is not detected as ambiguous
+                 if (! function[i].type->sameElementShape(*call[i].type) && !call[i].type->canUseVecConstructorForHigherType(*function[i].type)) {
+                     possibleMatch = false;
+                 }
++                if (call[i].type->canUseVecConstructorForHigherType(*function[i].type)) {
++                    requiresCasts++;
++                }
+                 // do direction-specific checks for conversion of basic type
+                 if (function[i].type->getQualifier().isParamInput()) {
+                     if (! intermediate.canImplicitlyPromote(call[i].type->getBasicType(), function[i].type->getBasicType()))
+@@ -9064,14 +9072,24 @@ const TFunction* TParseContext::findFunction120(const TSourceLoc& loc, const TFu
+                 break;
+         }
+         if (possibleMatch) {
+-            if (candidate) {
+-                // our second match, meaning ambiguity
+-                error(loc, "ambiguous function signature match: multiple signatures match under implicit type conversion", call.getName().c_str(), "");
+-            } else
++            if (requiresCasts < matchRequiredCasts) {
++                candidate = &function;
++                matchRequiredCasts = requiresCasts;
++                matchWithSameCasts = 0;
++            } else if (requiresCasts == matchRequiredCasts) {
++                matchWithSameCasts++;
++            }
++
++            if (!candidate && matchWithSameCasts == 0) {
+                 candidate = &function;
++            }
+         }
+     }
+ 
++    if (candidate && matchWithSameCasts > 1) {
++        error(loc, "ambiguous function signature match: multiple signatures match under implicit type conversion", call.getName().c_str(), "");
++    }
++
+     if (candidate == nullptr)
+         error(loc, "no matching overloaded function found", call.getName().c_str(), "");
+ 

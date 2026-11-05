@@ -141,8 +141,42 @@ set(CMAKE_INSTALL_RPATH "\$ORIGIN;\$ORIGIN/lib;\$ORIGIN/lib64")
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
 
 add_subdirectory(${CEF_LIBCEF_DLL_WRAPPER_PATH} libcef_dll_wrapper)
-add_subdirectory(src/External/glslang-WallpaperEngine glslang)
-add_subdirectory(src/External/SPIRV-Cross-WallpaperEngine spirv-cross)
+
+# The glslang/spirv-cross submodules track pristine KhronosGroup upstream tags.
+# The Wallpaper Engine shader-compatibility patches sit on top. We apply them at
+# configure time so a plain build can't silently skip them. apply-patches.sh
+# records the submodule HEAD plus checksums for the patch series and the applied
+# diff. That makes it idempotent and lets it repair reverted or half-applied
+# trees. The patch files are configure dependencies, so `cmake --build`
+# reconfigures and reapplies the series when they change.
+file (GLOB WALLPAPER_ENGINE_PATCH_FILES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/External/patches/glslang/*.patch
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/External/patches/spirv-cross/*.patch)
+
+execute_process (
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/src/External/apply-patches.sh
+    RESULT_VARIABLE WALLPAPER_ENGINE_PATCHES_RESULT
+)
+
+if (NOT WALLPAPER_ENGINE_PATCHES_RESULT EQUAL 0)
+    message (FATAL_ERROR "Applying the shader-compatibility patch series failed with ${WALLPAPER_ENGINE_PATCHES_RESULT}")
+endif ()
+
+set_property (DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    src/External/apply-patches.sh
+    ${WALLPAPER_ENGINE_PATCH_FILES}
+    src/External/glslang/glslang/Include/Types.h
+    src/External/glslang/glslang/MachineIndependent/Intermediate.cpp
+    src/External/glslang/glslang/MachineIndependent/ParseContextBase.cpp
+    src/External/glslang/glslang/MachineIndependent/ParseHelper.cpp
+    src/External/glslang/glslang/MachineIndependent/linkValidate.cpp
+    src/External/glslang/glslang/MachineIndependent/localintermediate.h
+    src/External/spirv-cross/spirv_glsl.cpp)
+
+# glslang's ENABLE_OPT must be off unless SPIRV-Tools is available, configure fails otherwise
+set(ENABLE_OPT OFF CACHE BOOL "" FORCE)
+add_subdirectory(src/External/glslang glslang)
+add_subdirectory(src/External/spirv-cross spirv-cross)
 add_subdirectory(src/External/kissfft kissfft)
 add_subdirectory(src/External/argparse argparse)
 set(QJS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -288,8 +322,6 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${WPENGINE_BUILT
 include_directories(
     ${WPENGINE_GENERATED_DIR}
     src
-    src/External/glslang-WallpaperEngine
-    src/External/SPIRV-Cross-WallpaperEngine
     src/External/MimeTypes
     src/External/json/include
     src/External/stb
@@ -304,6 +336,10 @@ include_directories(
     ${CMAKE_SOURCE_DIR}
     ${X11_INCLUDES}
     ${DBUS_INCLUDE_DIRS})
+
+include_directories(SYSTEM
+    src/External/glslang
+    src/External/spirv-cross)
 
 set(COMMON_SOURCES
     src/External/MimeTypes/MimeTypes.cpp
@@ -668,8 +704,8 @@ endif()
 
 target_include_directories(linux-wallpaperengine-lib PUBLIC
     src
-    src/External/glslang-WallpaperEngine
-    src/External/SPIRV-Cross-WallpaperEngine
+    src/External/glslang
+    src/External/spirv-cross
     src/External/MimeTypes
     src/External/json/include
     src/External/stb
