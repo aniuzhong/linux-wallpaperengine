@@ -1,11 +1,14 @@
 #include "ShaderUnit.h"
 
 #include "WallpaperEngine/Logging/Log.h"
+#include <algorithm>
 #include <exception>
 #include <regex>
+#include <set>
 #include <stack>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "GLSLContext.h"
 #include "WallpaperEngine/Assets/AssetLoadException.h"
@@ -61,6 +64,65 @@
 using namespace WallpaperEngine::Render;
 using namespace WallpaperEngine::Data::Builders;
 using namespace WallpaperEngine::Render::Shaders;
+
+namespace {
+/**
+ * Blanks out comment contents while preserving every byte position and newline, so text
+ * scanned for declarations/uses can be matched against positions in the original source
+ * (e.g. to find the #extension line) without commented-out code producing false hits.
+ */
+std::string stripShaderComments (const std::string& source) {
+    std::string result;
+    result.reserve (source.size ());
+
+    for (size_t i = 0; i < source.size ();) {
+	if (i + 1 < source.size () && source[i] == '/' && source[i + 1] == '/') {
+	    while (i < source.size () && source[i] != '\n') {
+		result += ' ';
+		i++;
+	    }
+	} else if (i + 1 < source.size () && source[i] == '/' && source[i + 1] == '*') {
+	    result += "  ";
+	    i += 2;
+	    // blank everything up to and including the closing "*/" (or to the end if unterminated)
+	    const size_t end = source.find ("*/", i);
+	    const size_t stop = end == std::string::npos ? source.size () : end + 2;
+	    for (; i < stop; i++) {
+		result += source[i] == '\n' ? '\n' : ' ';
+	    }
+	} else {
+	    result += source[i++];
+	}
+    }
+
+    return result;
+}
+
+/**
+ * Extracts the (name, type) pairs of every varying declaration in the given source, supporting
+ * both "varying vec2 v_Bounds;" and the multi-declarator "varying vec2 a, b;" forms.
+ */
+std::vector<std::pair<std::string, std::string>> collectVaryings (const std::string& code) {
+    static const std::regex declaration (R"(\bvarying\s+(\w+)\s+([\w\s,]+?);)");
+    static const std::regex identifier (R"(\w+)");
+
+    std::vector<std::pair<std::string, std::string>> result;
+    std::set<std::string> seen;
+    for (auto it = std::sregex_iterator (code.begin (), code.end (), declaration), end = std::sregex_iterator ();
+	 it != end; ++it) {
+	const std::string names = (*it)[2].str ();
+	for (auto name = std::sregex_iterator (names.begin (), names.end (), identifier),
+		  nameEnd = std::sregex_iterator ();
+	     name != nameEnd; ++name) {
+	    if (seen.insert (name->str ()).second) {
+		result.emplace_back (name->str (), (*it)[1].str ());
+	    }
+	}
+    }
+
+    return result;
+}
+}
 
 ShaderUnit::ShaderUnit (
     const GLSLContext::UnitType type, std::string file, std::string content, const AssetLocator& assetLocator,
@@ -414,6 +476,50 @@ std::string ShaderUnit::applyLinkedVaryingCompatibility (std::string source) con
     return source;
 }
 
+std::string ShaderUnit::applyLinkedVaryingDeclarations (std::string source) const {
+    if (this->m_type != GLSLContext::UnitType_Fragment || this->m_link == nullptr) {
+	return source;
+    }
+
+    // Wallpaper Engine makes every vertex varying visible to the fragment stage, so workshop
+    // fragment shaders can read one they never declare themselves (e.g. foliagesway.frag reading
+    // v_Bounds, which only foliagesway.vert declares). GLSL requires the declaration in the
+    // consuming stage; without it glslang rejects the pass and the whole object is dropped.
+    const std::string linkedCode = stripShaderComments (this->m_link->m_preprocessed);
+    const std::string fragmentCode = stripShaderComments (source);
+
+    std::set<std::string> declaredByFragment;
+    for (const auto& entry : collectVaryings (fragmentCode)) {
+	declaredByFragment.insert (entry.first);
+    }
+
+    std::string injected;
+    for (const auto& [name, type] : collectVaryings (linkedCode)) {
+	if (declaredByFragment.count (name) > 0
+	    || !std::regex_search (fragmentCode, std::regex ("\\b" + name + "\\b"))) {
+	    continue;
+	}
+
+	injected += "varying " + type + " " + name + ";\n";
+	sLog.out ("Declaring vertex varying \"", name, "\" (", type, ") missing from fragment shader ", this->m_file);
+    }
+
+    if (injected.empty ()) {
+	return source;
+    }
+
+    // #extension directives must precede any other declaration, so the injected block goes after
+    // the last one. Comment contents were blanked (not removed), so positions hold on the source.
+    size_t insertAt = 0;
+    if (const size_t extension = fragmentCode.rfind ("#extension"); extension != std::string::npos) {
+	const size_t lineEnd = fragmentCode.find ('\n', extension);
+	insertAt = lineEnd == std::string::npos ? fragmentCode.size () : lineEnd + 1;
+    }
+
+    source.insert (insertAt, injected);
+    return source;
+}
+
 std::string ShaderUnit::applyFragmentTexCoordCompatibility (std::string source) const {
     if (this->m_type != GLSLContext::UnitType_Fragment) {
 	return source;
@@ -714,8 +820,9 @@ const std::string& ShaderUnit::compile () {
     }
 
     // this should be the rest of the shader
-    this->m_final
-	+= this->applyFragmentTexCoordCompatibility (this->applyLinkedVaryingCompatibility (this->m_preprocessed));
+    this->m_final += this->applyFragmentTexCoordCompatibility (
+	this->applyLinkedVaryingDeclarations (this->applyLinkedVaryingCompatibility (this->m_preprocessed))
+    );
 
     // the pass itself handles shader compilation, the unit doesn't have enough information for this step
     return this->m_final;

@@ -101,6 +101,10 @@ private:
      */
     [[nodiscard]] std::string applyLinkedVaryingCompatibility (std::string source) const;
     /**
+     * Declares, in a fragment shader, the vertex varyings it reads but that only the linked vertex shader declares.
+     */
+    [[nodiscard]] std::string applyLinkedVaryingDeclarations (std::string source) const;
+    /**
      * Adjusts fragment shaders that use wide texture coordinates as vec2 values in Wallpaper Engine effects.
      */
     [[nodiscard]] std::string applyFragmentTexCoordCompatibility (std::string source) const;
