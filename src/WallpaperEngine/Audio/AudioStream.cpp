@@ -525,7 +525,28 @@ int AudioStream::resampleAudio (uint8_t* out_buf, const int out_size) {
 
     out_nb_channels = av_get_channel_layout_nb_channels (out_channel_layout);
 #else
+    int64_t out_channel_mask;
+
+    // set output audio channels based on the input audio channels
+    switch (this->m_audioContext.getChannels ()) {
+	case 1:
+	    out_channel_mask = AV_CH_LAYOUT_MONO;
+	    break;
+	case 2:
+	    out_channel_mask = AV_CH_LAYOUT_STEREO;
+	    break;
+	default:
+	    out_channel_mask = AV_CH_LAYOUT_SURROUND;
+	    break;
+    }
+
+    AVChannelLayout out_channel_layout;
+    if (av_channel_layout_from_mask (&out_channel_layout, out_channel_mask) != 0) {
+	sLog.exception ("Cannot get channel layout from mask");
+    }
+
     out_nb_channels = out_channel_layout.nb_channels;
+    av_channel_layout_uninit (&out_channel_layout);
 #endif
     ret = av_samples_alloc_array_and_samples (
 	&resampled_data, &out_linesize, out_nb_channels, out_nb_samples, this->m_audioContext.getFormat (), 0
