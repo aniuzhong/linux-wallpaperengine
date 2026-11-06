@@ -13,6 +13,7 @@ struct Color : private glm::vec4 {
     using glm::vec4::operator*=;
     using glm::vec4::operator/=;
     explicit Color (const glm::vec4& v) : glm::vec4 (v) { }
+    bool operator== (const Color& other) const = default;
     using glm::vec4::a;
     using glm::vec4::b;
     using glm::vec4::g;

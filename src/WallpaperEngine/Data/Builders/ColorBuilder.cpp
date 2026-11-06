@@ -59,7 +59,15 @@ WallpaperEngine::Data::Builders::ColorBuilder::parse (const std::string& value, 
 	       << number.at (3) << number.at (3);
 	    number = ss.str ();
 #endif
-	} else if (number.size () != 6 && number.size () != 8) {
+	} else if (number.size () == 6) {
+	    // "#rrggbb" is rgb-only: bytes sit at bits 16..0 and alpha comes from
+	    // the caller, the shared extraction below assumes an 8-digit layout
+	    const auto color = std::stoi (number, nullptr, 16);
+
+	    return WallpaperEngine::Data::Model::Color { static_cast<float> (color >> 16 & 0xFF) / 255.0f,
+							 static_cast<float> (color >> 8 & 0xFF) / 255.0f,
+							 static_cast<float> (color & 0xFF) / 255.0f, alpha };
+	} else if (number.size () != 8) {
 	    sLog.exception ("Invalid CSS color notation for ", value);
 	}
 
@@ -78,15 +86,18 @@ WallpaperEngine::Data::Builders::ColorBuilder::parse (const std::string& value, 
 	throw std::invalid_argument ("Invalid color value");
     }
 
-    if (copy.find ('.') == std::string::npos) {
-	const auto final = vectorSize == 3 ? glm::ivec4 (VectorBuilder::parse<glm::ivec3> (copy), alpha * 255)
-					   : VectorBuilder::parse<glm::ivec4> (copy);
+    // Space-separated colors without decimal points are ambiguous; use whether any
+    // component exceeds 1.0 to decide between 0–1 float colors and 0–255 byte colors.
+    const glm::vec4 color = vectorSize == 3 ? glm::vec4 (VectorBuilder::parse<glm::vec3> (copy), alpha)
+					    : VectorBuilder::parse<glm::vec4> (copy);
 
-	return { final.r / 255.0f, final.g / 255.0f, final.b / 255.0f, final.a / 255.0f };
+    if (color.r > 1.0f || color.g > 1.0f || color.b > 1.0f || color.a > 1.0f) {
+	// scale the alpha too only when it is byte-encoded itself; the vec3
+	// path carries the caller's normalized alpha and must keep it
+	const float scaledAlpha = color.a > 1.0f ? color.a / 255.0f : color.a;
+
+	return Model::Color (glm::vec4 (color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, scaledAlpha));
     }
 
-    return Model::Color (
-	vectorSize == 3 ? glm::vec4 (VectorBuilder::parse<glm::vec3> (copy), alpha)
-			: VectorBuilder::parse<glm::vec4> (copy)
-    );
+    return Model::Color (color);
 }
