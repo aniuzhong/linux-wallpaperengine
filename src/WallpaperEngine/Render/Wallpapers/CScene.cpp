@@ -315,7 +315,11 @@ void CScene::renderFrame (const glm::ivec4& viewport) {
 	    this->getScene ().camera.parallax.delay->value->getFloat () * (g_Time - g_TimeLast), 0.0f, 1.0f
 	);
 
-	const glm::vec2 centeredMouse = this->m_mousePosition - glm::vec2 (0.5f, 0.5f);
+	// with mouse input disabled the position reads as {0,0}, which would sit the virtual
+	// cursor at a screen corner and apply a constant saturated displacement; center it instead
+	const glm::vec2 centeredMouse = this->getContext ().getApp ().getContext ().settings.mouse.enabled
+	    ? this->m_mousePosition - glm::vec2 (0.5f, 0.5f)
+	    : glm::vec2 (0.0f, 0.0f);
 	this->m_parallaxDisplacement
 	    = glm::mix (this->m_parallaxDisplacement, (centeredMouse * amount) * influence, delay);
     }
@@ -422,6 +426,33 @@ const glm::vec2* CScene::getMousePositionLast () const { return &this->m_mousePo
 const glm::vec2* CScene::getMousePositionNormalized () const { return &this->m_mousePositionNormalized; }
 
 const glm::vec2* CScene::getParallaxDisplacement () const { return &this->m_parallaxDisplacement; }
+
+glm::vec2 CScene::clampParallaxOffset (const glm::vec2& offset, const glm::vec2& scaledSize) const {
+    const auto uvs = this->getState ().getTextureUVs ();
+    // the scene FBO renders the projection 1:1, so the shown world region is the
+    // UV sub-rect scaled by the projection size
+    const float shownWidth = (uvs.uend - uvs.ustart) * static_cast<float> (this->getState ().getProjectionWidth ());
+    const float shownHeight
+	= glm::abs (uvs.vend - uvs.vstart) * static_cast<float> (this->getState ().getProjectionHeight ());
+
+    glm::vec2 result = offset;
+
+    // a layer that covers the shown region must not be displaced past its own
+    // bounds, otherwise the clear color becomes visible around the edges. zero
+    // margin (stretch mode, aspect-equal output) pins the layer in place.
+    // smaller (interior) layers have negative margins and keep their full parallax
+    const float marginX = (scaledSize.x - shownWidth) / 2.0f;
+    const float marginY = (scaledSize.y - shownHeight) / 2.0f;
+
+    if (marginX >= 0.0f) {
+	result.x = glm::clamp (result.x, -marginX, marginX);
+    }
+    if (marginY >= 0.0f) {
+	result.y = glm::clamp (result.y, -marginY, marginY);
+    }
+
+    return result;
+}
 
 const std::vector<CObject*>& CScene::getObjectsByRenderOrder () const { return this->m_objectsByRenderOrder; }
 

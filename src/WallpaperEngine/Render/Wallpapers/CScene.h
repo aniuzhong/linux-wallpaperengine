@@ -45,6 +45,10 @@ public:
     [[nodiscard]] const std::vector<CObject*>& getObjectsByRenderOrder () const;
     [[nodiscard]] const CObject* getObject (int id) const;
 
+    /** Clamps a parallax offset so a layer covering the shown region cannot be
+     * displaced past its own bounds (which would expose the clear color) */
+    [[nodiscard]] glm::vec2 clampParallaxOffset (const glm::vec2& offset, const glm::vec2& scaledSize) const;
+
 protected:
     void renderFrame (const glm::ivec4& viewport) override;
     void updateMouse (const glm::ivec4& viewport);

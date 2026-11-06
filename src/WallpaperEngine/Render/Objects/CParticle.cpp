@@ -1859,7 +1859,6 @@ void CParticle::applyParallaxToModelMatrix () {
 	return;
     }
 
-    const float parallaxAmount = getScene ().getScene ().camera.parallax.amount->value->getFloat ();
     glm::vec2 depth = m_particle.parallaxDepth->value->getVec2 ();
     constexpr float minimumParticleDepth = 0.65f;
     if (std::abs (depth.x) < minimumParticleDepth) {
@@ -1870,10 +1869,13 @@ void CParticle::applyParallaxToModelMatrix () {
     }
 
     const glm::vec2* displacement = getScene ().getParallaxDisplacement ();
-    const float referenceSize = static_cast<float> (getScene ().getWidth ());
+    // Parallax: camera follows cursor; particles move opposite (negated, Wallpaper Engine style).
+    // Displacement = screen fraction, per-axis dimension.
+    // Depth-0: glued to viewport; parallax already in displacement (CScene::renderFrame), don't re-offset.
+    // No coverage clamp (unlike CImage): translucent quads never opaque-cover, so no new clear-color exposure.
     const glm::vec3 parallaxOffset {
-	(depth.x + parallaxAmount) * displacement->x * referenceSize,
-	(depth.y + parallaxAmount) * displacement->y * referenceSize,
+	-depth.x * displacement->x * static_cast<float> (getScene ().getWidth ()),
+	-depth.y * displacement->y * static_cast<float> (getScene ().getHeight ()),
 	0.0f,
     };
     m_modelMatrix = glm::translate (m_modelMatrix, parallaxOffset);

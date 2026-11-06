@@ -119,13 +119,13 @@ template <> void WallpaperState::updateTextureUVs<WallpaperState::TextureUVsScal
     const int projectionWidth = this->getProjectionWidth ();
     const int projectionHeight = this->getProjectionHeight ();
 
-    if ((viewportHeight > viewportWidth && projectionWidth >= projectionHeight)
-	|| (viewportWidth > viewportHeight && projectionHeight > projectionWidth)) {
-	updateUs (projectionWidth, projectionHeight);
-    }
+    // Use an aspect-ratio comparison to decide whether to crop the x- or y-axis.
+    const float viewportAspect = static_cast<float> (viewportWidth) / static_cast<float> (viewportHeight);
+    const float projectionAspect = static_cast<float> (projectionWidth) / static_cast<float> (projectionHeight);
 
-    if ((viewportWidth > viewportHeight && projectionWidth >= projectionHeight)
-	|| (viewportHeight > viewportWidth && projectionHeight > projectionWidth)) {
+    if (projectionAspect > viewportAspect) {
+	updateUs (projectionWidth, projectionHeight);
+    } else if (projectionAspect < viewportAspect) {
 	updateVs (projectionWidth, projectionHeight);
     }
 }

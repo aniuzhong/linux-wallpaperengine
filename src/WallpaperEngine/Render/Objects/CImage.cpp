@@ -1063,13 +1063,20 @@ void CImage::updateScreenSpacePosition () {
     // Apply parallax displacement if enabled
     if (this->getScene ().getScene ().camera.parallax.enabled
 	&& !this->getScene ().getContext ().getApp ().getContext ().settings.mouse.disableparallax) {
-	const double parallaxAmount = this->getScene ().getScene ().camera.parallax.amount->value->getFloat ();
 	const glm::vec2 depth = this->getImage ().parallaxDepth->value->getVec2 ();
 	const glm::vec2* displacement = this->getScene ().getParallaxDisplacement ();
-	const float referenceSize = static_cast<float> (this->getScene ().getWidth ());
-	float x = (depth.x + parallaxAmount) * displacement->x * referenceSize;
-	float y = (depth.y + parallaxAmount) * displacement->y * referenceSize;
-	mvp = glm::translate (mvp, { x, y, 0.0f });
+	const auto referenceSize = static_cast<float> (this->getScene ().getWidth ());
+	// parallaxDepth 0 (e.g. fullscreen solid bg): glued to viewport; parallax already baked into
+	// displacement (CScene::renderFrame), re-adding it pushes bg off-screen and exposes clear color at edges.
+	// Other layers: camera follows cursor, layers move opposite (negated, Wallpaper Engine style);
+	// displacement = screen fraction, per-axis scene dimension.
+	glm::vec2 offset = glm::vec2 (
+	    -depth.x * displacement->x * referenceSize,
+	    -depth.y * displacement->y * static_cast<float> (this->getScene ().getHeight ())
+	);
+	// a layer covering the shown region must not slide past its own bounds either
+	offset = this->getScene ().clampParallaxOffset (offset, this->m_size * glm::vec2 (transform.scale));
+	mvp = glm::translate (mvp, { offset.x, offset.y, 0.0f });
     }
 
     this->m_modelViewProjectionScreen = mvp;
