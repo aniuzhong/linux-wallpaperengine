@@ -151,8 +151,12 @@ AudioStream::~AudioStream () {
     this->m_audioThread = nullptr;
 
     if (this->m_queue != nullptr) {
-	// wait for the audio buffers to be done
-	SDL_CondWait (this->m_queue->wait, this->m_queue->mutex);
+	// wait for any in-flight audio buffers to be done, bounded so shutdown
+	// never hangs waiting for a signal that can no longer arrive (the audio
+	// callback stops signalling once the stream is no longer initialized)
+	SDL_LockMutex (this->m_queue->mutex);
+	SDL_CondWaitTimeout (this->m_queue->wait, this->m_queue->mutex, 100);
+	SDL_UnlockMutex (this->m_queue->mutex);
     }
 
     if (this->m_swrctx != nullptr && swr_is_initialized (this->m_swrctx) == true) {
@@ -417,8 +421,9 @@ void AudioStream::dequeuePacket () {
 	    break;
 	}
 
-	// make the thread wait if nothing was available
-	SDL_CondWait (this->m_queue->cond, this->m_queue->mutex);
+	// make the thread wait if nothing was available, but bound the wait so that
+	// the loop can re-check keepRunning when the reader thread is gone
+	SDL_CondWaitTimeout (this->m_queue->cond, this->m_queue->mutex, 50);
     }
 
     SDL_UnlockMutex (this->m_queue->mutex);
@@ -465,6 +470,15 @@ void AudioStream::stop () {
 
     // stop the threads running
     this->m_initialized = false;
+
+    // wake up any thread still waiting on the queue (the audio callback drains
+    // it under this mutex, and the reader thread may be sleeping on it too)
+    if (this->m_queue != nullptr) {
+	SDL_LockMutex (this->m_queue->mutex);
+	SDL_CondBroadcast (this->m_queue->cond);
+	SDL_CondBroadcast (this->m_queue->wait);
+	SDL_UnlockMutex (this->m_queue->mutex);
+    }
 }
 
 int AudioStream::resampleAudio (uint8_t* out_buf, const int out_size) {
