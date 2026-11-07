@@ -570,23 +570,19 @@ GLuint CPass::compileShader (const char* shader, GLuint type) {
     glGetShaderiv (shaderID, GL_INFO_LOG_LENGTH, &infoLogLength);
 
     if (infoLogLength > 0) {
-	const auto logBuffer = new char[infoLogLength + 1];
-	// ensure logBuffer ends with a \0
-	memset (logBuffer, 0, infoLogLength + 1);
+	// driver always null-terminates within infoLogLength bytes
+	std::string logBuffer (infoLogLength, '\0');
 	// get information about the error
-	glGetShaderInfoLog (shaderID, infoLogLength, nullptr, logBuffer);
-	// throw an exception about the issue
-	std::stringstream buffer;
-	buffer << logBuffer << std::endl << "Compiled source code:" << std::endl << shader;
-	// free the buffer
-	delete[] logBuffer;
+	glGetShaderInfoLog (shaderID, infoLogLength, nullptr, logBuffer.data ());
 
 	if (result == GL_FALSE) {
-	    // shader compilation failed completely, throw an exception
+	    // shader compilation failed completely, dump the info log and the source code, then throw an exception
+	    std::stringstream buffer;
+	    buffer << logBuffer.c_str () << std::endl << "Compiled source code:" << std::endl << shader;
 	    sLog.exception (buffer.str ());
 	} else {
-	    // some warning was emitted, log the error and keep chuging along
-	    sLog.error (buffer.str ());
+	    // some warning was emitted, log the warning and keep chuging along
+	    sLog.error (logBuffer.c_str ());
 	}
     }
 
