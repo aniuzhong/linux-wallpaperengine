@@ -98,7 +98,14 @@ public:
     /**
      * Updates the UVs coordinates if window/screen/vflip/projection has changed
      */
-    void updateUVs (const glm::ivec4& viewport, const bool vflip);
+    virtual void updateUVs (const glm::ivec4& viewport, bool vflip);
+
+    /**
+     * Feeds the wallpaper state with the given projection dimensions, updating UVs
+     * only when something changed. Derived classes pass the dimensions their scene
+     * renders at (e.g. scenes render at the output viewport, not the camera projection).
+     */
+    void updateStateUVs (const glm::ivec4& viewport, bool vflip, int projectionWidth, int projectionHeight);
 
     /**
      * Updates the destination framebuffer for this wallpaper
@@ -140,13 +147,14 @@ public:
     static std::unique_ptr<CWallpaper> fromWallpaper (
 	const Wallpaper& wallpaper, RenderContext& context, AudioContext& audioContext,
 	WebBrowser::WebBrowserContext* browserContext, const WallpaperState::TextureUVsScaling& scalingMode,
-	const uint32_t& clampMode
+	const uint32_t& clampMode, const glm::ivec2& renderSize = {}
     );
 
 protected:
     CWallpaper (
 	const Wallpaper& wallpaperData, RenderContext& context, AudioContext& audioContext,
-	const WallpaperState::TextureUVsScaling& scalingMode, const uint32_t& clampMode
+	const WallpaperState::TextureUVsScaling& scalingMode, const uint32_t& clampMode,
+	const glm::ivec2& renderSize = {}
     );
 
     /**
@@ -157,7 +165,14 @@ protected:
     /**
      * Setups OpenGL's framebuffers for ping-pong and scene rendering
      */
-    void setupFramebuffers ();
+    virtual void setupFramebuffers ();
+
+    /**
+     * Size the scene renders at in pixels (output viewport * render scale).
+     * Scenes render directly at this resolution; other wallpaper types keep
+     * their own dimensions.
+     */
+    [[nodiscard]] const glm::ivec2& getRenderSize () const { return this->m_renderSize; }
 
     const Wallpaper& m_wallpaperData;
 
@@ -187,6 +202,8 @@ private:
     AudioContext& m_audioContext;
     /** Current Wallpaper state */
     WallpaperState m_state;
+    /** Size the scene renders at in pixels (output viewport * render scale) */
+    glm::ivec2 m_renderSize = {};
     /** Span info for multi-monitor spanning (optional) */
     std::optional<SpanInfo> m_spanInfo = std::nullopt;
     /** Frame counter to avoid redundant renderFrame calls when shared across viewports */

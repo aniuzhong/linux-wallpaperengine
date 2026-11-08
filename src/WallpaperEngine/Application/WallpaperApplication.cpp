@@ -447,11 +447,18 @@ void WallpaperApplication::advancePlaylist (
 	    : this->m_context.settings.render.window.clamp;
 
 	if (this->m_renderContext) {
+	    // scene render size: the target screen's viewport scaled by --render-scale
+	    glm::ivec2 viewportSize = { 0, 0 };
+	    if (const auto viewportIt = this->m_renderContext->getOutput ().getViewports ().find (screen);
+		viewportIt != this->m_renderContext->getOutput ().getViewports ().end ()) {
+		viewportSize = { viewportIt->second->viewport.z, viewportIt->second->viewport.w };
+	    }
+
 	    this->m_renderContext->setWallpaper (
 		screen,
 		WallpaperEngine::Render::CWallpaper::fromWallpaper (
 		    *this->m_backgrounds[screen]->wallpaper, *this->m_renderContext, *this->m_audioContext,
-		    this->m_browserContext.get (), scaling, clamp
+		    this->m_browserContext.get (), scaling, clamp, this->renderSizeForScreen (viewportSize)
 		)
 	    );
 	}
@@ -471,6 +478,14 @@ void WallpaperApplication::advancePlaylist (
 
     const uint32_t delayMinutes = std::max<uint32_t> (1, playlist.definition.settings.delayMinutes);
     playlist.nextSwitch = now + std::chrono::minutes (delayMinutes);
+}
+
+glm::ivec2 WallpaperApplication::renderSizeForScreen (const glm::ivec2& viewportSize) const {
+    const float scale = std::max (0.1f, this->m_context.settings.render.renderScale);
+    return {
+	std::max (1, static_cast<int> (static_cast<float> (viewportSize.x) * scale)),
+	std::max (1, static_cast<int> (static_cast<float> (viewportSize.y) * scale)),
+    };
 }
 
 void WallpaperApplication::updatePlaylists () {
@@ -580,9 +595,10 @@ void WallpaperApplication::takeScreenshot (const std::filesystem::path& filename
 	// ensure rendering is complete before reading
 	glFinish ();
 
-	// make room for storing the pixel of this viewport
-	const int readWidth = wallpaper->getWidth ();
-	const int readHeight = wallpaper->getHeight ();
+	// make room for storing the pixel of this viewport, sized after the FBO the
+	// wallpaper actually renders into (scenes render at viewport*renderScale)
+	const int readWidth = wallpaper->getFBO ()->getRealWidth ();
+	const int readHeight = wallpaper->getFBO ()->getRealHeight ();
 	const auto bufferSize = readWidth * readHeight * 3;
 	auto* buffer = new uint8_t[bufferSize];
 
@@ -739,10 +755,18 @@ void WallpaperApplication::prepareOutputs () {
 	    ? clampIt->second
 	    : this->m_context.settings.render.window.clamp;
 
+	// scene render size: this screen's viewport scaled by --render-scale
+	glm::ivec2 viewportSize = { 0, 0 };
+	if (const auto viewportIt = m_renderContext->getOutput ().getViewports ().find (background);
+	    viewportIt != m_renderContext->getOutput ().getViewports ().end ()) {
+	    viewportSize = { viewportIt->second->viewport.z, viewportIt->second->viewport.w };
+	}
+
 	m_renderContext->setWallpaper (
 	    background,
 	    WallpaperEngine::Render::CWallpaper::fromWallpaper (
-		*info->wallpaper, *m_renderContext, *m_audioContext, m_browserContext.get (), scaling, clamp
+		*info->wallpaper, *m_renderContext, *m_audioContext, m_browserContext.get (), scaling, clamp,
+		this->renderSizeForScreen (viewportSize)
 	    )
 	);
     }
@@ -795,13 +819,14 @@ void WallpaperApplication::prepareOutputs () {
 	    "SPAN DEBUG prepareOutputs: bounding box=(", minX, ",", minY, ",", maxX - minX, ",", maxY - minY, ")"
 	);
 
-	WallpaperEngine::Render::CWallpaper::SpanInfo spanInfo;
+	WallpaperEngine::Render::CWallpaper::SpanInfo spanInfo {};
 	spanInfo.totalBounds = { minX, minY, maxX - minX, maxY - minY };
 
-	// Create one shared wallpaper with the span group's scaling mode
+	// Create one shared wallpaper with the span group's scaling mode, rendering
+	// at the group's combined bounding box scaled by --render-scale
 	auto sharedWallpaper = WallpaperEngine::Render::CWallpaper::fromWallpaper (
 	    *bgIt->second->wallpaper, *m_renderContext, *m_audioContext, m_browserContext.get (), spanGroup.scaling,
-	    spanGroup.clamp
+	    spanGroup.clamp, this->renderSizeForScreen ({ spanInfo.totalBounds.z, spanInfo.totalBounds.w })
 	);
 
 	// Convert to shared_ptr so it can be registered for multiple viewports

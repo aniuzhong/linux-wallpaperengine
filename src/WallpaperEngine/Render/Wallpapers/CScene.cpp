@@ -24,8 +24,8 @@ using namespace WallpaperEngine::Render::Wallpapers;
 
 CScene::CScene (
     const Wallpaper& wallpaper, RenderContext& context, AudioContext& audioContext,
-    const WallpaperState::TextureUVsScaling& scalingMode, const uint32_t& clampMode
-) : CWallpaper (wallpaper, context, audioContext, scalingMode, clampMode) {
+    const WallpaperState::TextureUVsScaling& scalingMode, const uint32_t& clampMode, const glm::ivec2& renderSize
+) : CWallpaper (wallpaper, context, audioContext, scalingMode, clampMode, renderSize) {
     // caller should check this, if not a std::bad_cast is good to throw
     auto scene = wallpaper.as<Scene> ();
 
@@ -70,14 +70,45 @@ CScene::CScene (
 
     this->m_parallaxDisplacement = { 0, 0 };
 
+    this->m_projectionWidth = width;
+    this->m_projectionHeight = height;
+
+    // pixel size the scene renders at: the output viewport scaled by --render-scale,
+    // falling back to the projection size when the caller did not provide one
+    this->m_renderWidth = this->getRenderSize ().x > 0 ? static_cast<float> (this->getRenderSize ().x) : width;
+    this->m_renderHeight = this->getRenderSize ().y > 0 ? static_cast<float> (this->getRenderSize ().y) : height;
+
     // TODO: CONVERSION
-    this->m_camera->setOrthogonalProjection (width, height);
+    // instead of rendering the projection 1:1 into a small FBO and cropping UVs at composite
+    // time (which bilinearly upscales pixel art into a blur), adapt the camera's orthogonal
+    // window to the render target's aspect ratio so the scene renders directly at screen
+    // resolution — the same world region ends up visible, matching Wallpaper Engine semantics
+    float windowWidth = width;
+    float windowHeight = height;
+
+    if (this->getState ().getTextureUVsScaling () != WallpaperState::TextureUVsScaling::StretchUVs) {
+	const float m1 = this->m_renderWidth / width;
+	const float m2 = this->m_renderHeight / height;
+	// cover (default/fill) crops the overflowing axis, fit letterboxes with clear color
+	const float m = this->getState ().getTextureUVsScaling () == WallpaperState::TextureUVsScaling::ZoomFitUVs
+	    ? glm::min (m1, m2)
+	    : glm::max (m1, m2);
+
+	if (m > 0.0f) {
+	    windowWidth = this->m_renderWidth / m;
+	    windowHeight = this->m_renderHeight / m;
+	}
+    }
+
+    this->m_camera->setOrthogonalProjection (windowWidth, windowHeight);
 
     // setup framebuffers here as they're required for the scene setup
     this->setupFramebuffers ();
 
-    const uint32_t sceneWidth = this->m_camera->getWidth ();
-    const uint32_t sceneHeight = this->m_camera->getHeight ();
+    // intermediate render targets follow the render resolution, not the projection:
+    // effect shaders address them through g_TexelSize, which tracks the scene FBO
+    const uint32_t sceneWidth = static_cast<uint32_t> (glm::max (1.0f, this->m_renderWidth));
+    const uint32_t sceneHeight = static_cast<uint32_t> (glm::max (1.0f, this->m_renderHeight));
 
     this->_rt_shadowAtlas = this->create (
 	"_rt_shadowAtlas", TextureFormat_ARGB8888, TextureFlags_ClampUVs, 1.0, { sceneWidth, sceneHeight },
@@ -401,9 +432,38 @@ void CScene::updateMouse (const glm::ivec4& viewport) {
 
 const Scene& CScene::getScene () const { return *this->getWallpaperData ().as<Scene> (); }
 
-int CScene::getWidth () const { return this->m_camera->getWidth (); }
+int CScene::getWidth () const { return static_cast<int> (this->m_projectionWidth); }
 
-int CScene::getHeight () const { return this->m_camera->getHeight (); }
+int CScene::getHeight () const { return static_cast<int> (this->m_projectionHeight); }
+
+const glm::vec2* CScene::getTexelSize () const { return &this->m_texelSize; }
+
+const glm::vec2* CScene::getTexelSizeHalf () const { return &this->m_texelSizeHalf; }
+
+void CScene::setupFramebuffers () {
+    const uint32_t width = static_cast<uint32_t> (glm::max (1.0f, this->m_renderWidth));
+    const uint32_t height = static_cast<uint32_t> (glm::max (1.0f, this->m_renderHeight));
+    const uint32_t clamp = this->getState ().getClampingMode ();
+
+    // create framebuffer for the scene at the render resolution, scenes render
+    // directly at screen resolution instead of the projection size
+    this->m_sceneFBO = this->create (
+	"_rt_FullFrameBuffer", TextureFormat_ARGB8888, clamp, 1.0, { width, height }, { width, height }
+    );
+
+    this->alias ("_rt_MipMappedFrameBuffer", "_rt_FullFrameBuffer");
+
+    this->m_texelSize = glm::vec2 (1.0f / static_cast<float> (width), 1.0f / static_cast<float> (height));
+    this->m_texelSizeHalf = this->m_texelSize * 0.5f;
+}
+
+void CScene::updateUVs (const glm::ivec4& viewport, const bool vflip) {
+    // the scene FBO matches the output viewport, so the composite maps it 1:1 and
+    // any aspect adaptation already happened in the camera's orthogonal window
+    this->updateStateUVs (
+	viewport, vflip, static_cast<int> (this->m_renderWidth), static_cast<int> (this->m_renderHeight)
+    );
+}
 
 float CScene::getTime () const { return g_Time; }
 
@@ -428,12 +488,10 @@ const glm::vec2* CScene::getMousePositionNormalized () const { return &this->m_m
 const glm::vec2* CScene::getParallaxDisplacement () const { return &this->m_parallaxDisplacement; }
 
 glm::vec2 CScene::clampParallaxOffset (const glm::vec2& offset, const glm::vec2& scaledSize) const {
-    const auto uvs = this->getState ().getTextureUVs ();
-    // the scene FBO renders the projection 1:1, so the shown world region is the
-    // UV sub-rect scaled by the projection size
-    const float shownWidth = (uvs.uend - uvs.ustart) * static_cast<float> (this->getState ().getProjectionWidth ());
-    const float shownHeight
-	= glm::abs (uvs.vend - uvs.vstart) * static_cast<float> (this->getState ().getProjectionHeight ());
+    // the camera's orthogonal window is the world region actually shown on screen,
+    // so a layer that covers it must not be displaced past its own bounds
+    const float shownWidth = this->m_camera->getWidth ();
+    const float shownHeight = this->m_camera->getHeight ();
 
     glm::vec2 result = offset;
 

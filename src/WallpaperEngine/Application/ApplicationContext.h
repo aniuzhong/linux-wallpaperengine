@@ -113,6 +113,12 @@ public:
 	    WINDOW_MODE mode;
 	    /** Maximum FPS */
 	    int maximumFPS;
+	    /**
+	     * Scale factor applied to the scene render resolution (1.0 renders at the
+	     * output's native resolution, 0.5 at half). Mirrors Wallpaper Engine's
+	     * wallpaper quality setting.
+	     */
+	    float renderScale;
 	    /** Indicates if pausing should happen when something goes fullscreen */
 	    bool pauseOnFullscreen;
 	    /**
@@ -200,6 +206,7 @@ public:
         .render = {
             .mode = NORMAL_WINDOW,
             .maximumFPS = 30,
+            .renderScale = 1.0f,
             .pauseOnFullscreen = true,
             .pauseOnFullscreenOnlyWhenActive = false,
             .fullscreenPauseIgnoreAppIds = {},

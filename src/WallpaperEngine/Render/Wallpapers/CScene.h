@@ -17,7 +17,8 @@ class CScene final : public CWallpaper {
 public:
     CScene (
 	const Wallpaper& wallpaper, RenderContext& context, AudioContext& audioContext,
-	const WallpaperState::TextureUVsScaling& scalingMode, const uint32_t& clampMode
+	const WallpaperState::TextureUVsScaling& scalingMode, const uint32_t& clampMode,
+	const glm::ivec2& renderSize = {}
     );
 
     ~CScene () override;
@@ -27,8 +28,13 @@ public:
 
     [[nodiscard]] const Scene& getScene () const;
 
+    /** World-space dimensions of the scene (the camera projection size) */
     [[nodiscard]] int getWidth () const override;
     [[nodiscard]] int getHeight () const override;
+
+    /** Pixel resolution the scene renders at (render size), for resolution-dependent uniforms */
+    [[nodiscard]] const glm::vec2* getTexelSize () const;
+    [[nodiscard]] const glm::vec2* getTexelSizeHalf () const;
 
     // Time accessors used by dynamic text layers (CText + ScriptEngine).
     // Read from the application-wide g_Time/g_TimeLast globals that other
@@ -51,6 +57,8 @@ public:
 
 protected:
     void renderFrame (const glm::ivec4& viewport) override;
+    void setupFramebuffers () override;
+    void updateUVs (const glm::ivec4& viewport, const bool vflip) override;
     void updateMouse (const glm::ivec4& viewport);
 
     friend class CWallpaper;
@@ -62,6 +70,15 @@ private:
 
     std::unique_ptr<Scripting::ScriptEngine> m_scriptEngine;
     std::unique_ptr<Camera> m_camera;
+    /** World-space size of the camera projection (what objects position themselves against) */
+    float m_projectionWidth = 0.0f;
+    float m_projectionHeight = 0.0f;
+    /** Pixel size the scene renders at (output viewport * render scale) */
+    float m_renderWidth = 0.0f;
+    float m_renderHeight = 0.0f;
+    /** Texel sizes of the scene FBO, consumed by effect shaders (g_TexelSize) */
+    glm::vec2 m_texelSize = {};
+    glm::vec2 m_texelSizeHalf = {};
     ObjectUniquePtr m_bloomObjectData;
     CObject* m_bloomObject = nullptr;
     std::map<int, CObject*> m_objects = {};

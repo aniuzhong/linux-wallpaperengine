@@ -152,6 +152,8 @@ private:
 
     void initializePlaylists ();
     void updatePlaylists ();
+    /** Output viewport size for a screen, scaled by --render-scale, for scene render targets */
+    [[nodiscard]] glm::ivec2 renderSizeForScreen (const glm::ivec2& viewportSize) const;
     void advancePlaylist (
 	const std::string& screen, ActivePlaylist& playlist, const std::chrono::steady_clock::time_point& now
     );

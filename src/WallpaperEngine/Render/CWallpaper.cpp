@@ -11,11 +11,10 @@ using namespace WallpaperEngine::Render;
 
 CWallpaper::CWallpaper (
     const Wallpaper& wallpaperData, RenderContext& context, AudioContext& audioContext,
-    const WallpaperState::TextureUVsScaling& scalingMode, const uint32_t& clampMode
+    const WallpaperState::TextureUVsScaling& scalingMode, const uint32_t& clampMode, const glm::ivec2& renderSize
 ) :
     ContextAware (context), FBOProvider (nullptr), m_wallpaperData (wallpaperData), m_audioContext (audioContext),
-    m_state (scalingMode, clampMode) {
-    // generate the VAO to stop opengl from complaining
+    m_state (scalingMode, clampMode), m_renderSize (renderSize) { // generate the VAO to stop opengl from complaining
     glGenVertexArrays (1, &this->m_vaoBuffer);
     glBindVertexArray (this->m_vaoBuffer);
 
@@ -190,9 +189,15 @@ const CWallpaper::SpanInfo* CWallpaper::getSpanInfo () const {
 
 void CWallpaper::updateUVs (const glm::ivec4& viewport, const bool vflip) {
     // update UVs if something has changed, otherwise use old values
-    if (this->m_state.hasChanged (viewport, vflip, this->getWidth (), this->getHeight ())) {
+    this->updateStateUVs (viewport, vflip, this->getWidth (), this->getHeight ());
+}
+
+void CWallpaper::updateStateUVs (
+    const glm::ivec4& viewport, const bool vflip, const int projectionWidth, const int projectionHeight
+) {
+    if (this->m_state.hasChanged (viewport, vflip, projectionWidth, projectionHeight)) {
 	// Update wallpaper state
-	this->m_state.updateState (viewport, vflip, this->getWidth (), this->getHeight ());
+	this->m_state.updateState (viewport, vflip, projectionWidth, projectionHeight);
     }
 }
 
@@ -341,11 +346,11 @@ std::shared_ptr<const CFBO> CWallpaper::getFBO () const { return this->m_sceneFB
 std::unique_ptr<CWallpaper> CWallpaper::fromWallpaper (
     const Wallpaper& wallpaper, RenderContext& context, AudioContext& audioContext,
     WebBrowser::WebBrowserContext* browserContext, const WallpaperState::TextureUVsScaling& scalingMode,
-    const uint32_t& clampMode
+    const uint32_t& clampMode, const glm::ivec2& renderSize
 ) {
     if (wallpaper.is<Scene> ()) {
 	return std::make_unique<WallpaperEngine::Render::Wallpapers::CScene> (
-	    wallpaper, context, audioContext, scalingMode, clampMode
+	    wallpaper, context, audioContext, scalingMode, clampMode, renderSize
 	);
     }
 

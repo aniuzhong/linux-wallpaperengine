@@ -1050,7 +1050,7 @@ void CImage::updateScreenSpacePosition () {
     // Build rotation from angles (already in radians from scene.json — see CParticle.cpp:2119)
     // Negate X and Z rotations to account for Y-flipped coordinate system (CParticle.cpp:2120)
     const float angle = transform.angle;
-    glm::mat4 rotModel = glm::mat4 (1.0f);
+    auto rotModel = glm::mat4 (1.0f);
     if (angle != 0.0f) {
 	rotModel = glm::translate (rotModel, this->m_sceneCenter);
 	rotModel = glm::rotate (rotModel, -angle, glm::vec3 (0.0f, 0.0f, 1.0f));
@@ -1065,14 +1065,16 @@ void CImage::updateScreenSpacePosition () {
 	&& !this->getScene ().getContext ().getApp ().getContext ().settings.mouse.disableparallax) {
 	const glm::vec2 depth = this->getImage ().parallaxDepth->value->getVec2 ();
 	const glm::vec2* displacement = this->getScene ().getParallaxDisplacement ();
-	const auto referenceSize = static_cast<float> (this->getScene ().getWidth ());
+	// displacement is a screen fraction of the camera's orthogonal window, the
+	// world region actually visible (not the full projection)
+	const auto referenceSize = this->getScene ().getCamera ().getWidth ();
 	// parallaxDepth 0 (e.g. fullscreen solid bg): glued to viewport; parallax already baked into
 	// displacement (CScene::renderFrame), re-adding it pushes bg off-screen and exposes clear color at edges.
 	// Other layers: camera follows cursor, layers move opposite (negated, Wallpaper Engine style);
 	// displacement = screen fraction, per-axis scene dimension.
 	glm::vec2 offset = glm::vec2 (
 	    -depth.x * displacement->x * referenceSize,
-	    -depth.y * displacement->y * static_cast<float> (this->getScene ().getHeight ())
+	    -depth.y * displacement->y * this->getScene ().getCamera ().getHeight ()
 	);
 	// a layer covering the shown region must not slide past its own bounds either
 	offset = this->getScene ().clampParallaxOffset (offset, this->m_size * glm::vec2 (transform.scale));

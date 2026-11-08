@@ -886,8 +886,10 @@ void CPass::setupUniforms () {
     this->addUniform ("g_PointerPositionLast", scene.getMousePositionLast ());
     this->addUniform ("g_EffectTextureProjectionMatrix", glm::mat4 (1.0));
     this->addUniform ("g_EffectTextureProjectionMatrixInverse", glm::mat4 (1.0));
-    this->addUniform ("g_TexelSize", glm::vec2 (1.0 / scene.getWidth (), 1.0 / scene.getHeight ()));
-    this->addUniform ("g_TexelSizeHalf", glm::vec2 (0.5 / scene.getWidth (), 0.5 / scene.getHeight ()));
+    // texel sizes track the scene FBO's real resolution through a pointer, so
+    // effects keep correct sampling offsets at any render scale
+    this->addUniform ("g_TexelSize", scene.getTexelSize ());
+    this->addUniform ("g_TexelSizeHalf", scene.getTexelSizeHalf ());
     this->addUniform ("g_AudioSpectrum16Left", recorder.audio16, 16);
     this->addUniform ("g_AudioSpectrum16Right", recorder.audio16, 16);
     this->addUniform ("g_AudioSpectrum32Left", recorder.audio32, 32);

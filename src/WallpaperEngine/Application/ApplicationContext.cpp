@@ -601,6 +601,14 @@ void ApplicationContext::loadSettingsFromArgv () {
 	.flag ()
 	.store_into (this->settings.general.dumpStructure);
 
+    debuggingGroup.add_argument ("--render-scale")
+	.help (
+	    "Scale factor for the scene render resolution (1.0 = output resolution, 0.5 = half, saves GPU "
+	    "on high-resolution wallpapers). Mirrors Wallpaper Engine's wallpaper quality setting."
+	)
+	.default_value (1.0f)
+	.store_into (this->settings.render.renderScale);
+
     debuggingGroup.add_argument ("--render-debug")
 	.help (
 	    "Scene render debug mode: base-only, no-solid-final, pass-log, object=<id>, skip-object=<id>, or "
