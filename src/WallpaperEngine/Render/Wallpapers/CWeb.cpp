@@ -6,6 +6,9 @@
 
 #include "WallpaperEngine/Data/Model/Project.h"
 #include "WallpaperEngine/Data/Model/Wallpaper.h"
+#include "WallpaperEngine/Logging/Log.h"
+
+#include <unistd.h>
 
 using namespace WallpaperEngine::Render;
 using namespace WallpaperEngine::Render::Wallpapers;
@@ -26,13 +29,23 @@ CWeb::CWeb (
     this->m_renderHandler = new WebBrowser::CEF::RenderHandler (this);
 
     CefBrowserSettings browserSettings;
-    // documentaion says that 60 fps is maximum value
-    browserSettings.windowless_frame_rate = std::max (60, context.getApp ().getContext ().settings.render.maximumFPS);
+    // documentation says 60 fps is the maximum value, and the frame rate
+    // should follow --fps instead of forcing every web wallpaper to 60
+    browserSettings.windowless_frame_rate = std::min (60, context.getApp ().getContext ().settings.render.maximumFPS);
 
     this->m_client = new WebBrowser::CEF::BrowserClient (m_renderHandler);
-    // use the custom scheme for the wallpaper's files
-    const std::string htmlURL = WPSchemeHandlerFactory::generateSchemeName (this->getWeb ().project.workshopId)
-	+ "://root/" + this->getWeb ().filename;
+    // directory-based projects open from disk: pages build file:/// URLs from
+    // user properties (images, presets) and Chromium refuses those loads from
+    // the wp<id>:// origin; packaged items have no physical path and keep
+    // using the scheme handler
+    std::string htmlURL;
+
+    try {
+	htmlURL = "file://" + this->getWeb ().project.assetLocator->physicalPath (this->getWeb ().filename).string ();
+    } catch (const std::exception&) {
+	htmlURL = WPSchemeHandlerFactory::generateSchemeName (this->getWeb ().project.workshopId) + "://root/"
+	    + this->getWeb ().filename;
+    }
     this->m_browser
 	= CefBrowserHost::CreateBrowserSync (window_info, this->m_client, htmlURL, browserSettings, nullptr, nullptr);
 }
@@ -116,8 +129,27 @@ void CWeb::updateMouse (const glm::ivec4& viewport) {
 }
 
 CWeb::~CWeb () {
-    CefDoMessageLoopWork ();
-    this->m_browser->GetHost ()->CloseBrowser (true);
+    // close the browser and wait for the handshake to finish: CefShutdown
+    // (which runs right after the wallpapers are destroyed) deadlocks if any
+    // browser is still alive. The close is asynchronous, so keep pumping the
+    // message loop until OnBeforeClose fires, bounded in case a dead child
+    // process never answers the close request
+    if (this->m_browser) {
+	this->m_browser->GetHost ()->CloseBrowser (true);
 
-    delete this->m_renderHandler;
+	for (int attempts = 0; attempts < 3000 && !this->m_client->isBrowserClosed (); attempts++) {
+	    CefDoMessageLoopWork ();
+	    usleep (1000);
+	}
+
+	if (!this->m_client->isBrowserClosed ()) {
+	    sLog.error ("Browser for the web wallpaper did not confirm shutdown in time");
+	}
+
+	// release our references before CefShutdown, the client and browser
+	// objects must be dropped by then
+	this->m_browser = nullptr;
+	this->m_client = nullptr;
+	this->m_renderHandler = nullptr;
+    }
 }

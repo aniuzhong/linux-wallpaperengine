@@ -46,7 +46,7 @@ set(KISSFFT_TOOLS OFF)
 
 # Download CEF of specified version for current platform
 # Specify the CEF distribution version.
-set(CEF_VERSION "135.0.17+gcbc1c5b+chromium-135.0.7049.52")
+set(CEF_VERSION "156.0.26+g8ea0c73+chromium-156.0.8078.88")
 # CEF_DISTRIBUTION_TYPE default value should be different based on the type of build
 # debug builds should use standard versions
 # while release version can do with the minimal version
@@ -112,6 +112,13 @@ endif()
 message(STATUS "Using CEF for ${CMAKE_SYSTEM_NAME} - ${CEF_PLATFORM} (${CEF_ARCH_DETECTION})")
 include(DownloadCEF)
 DownloadCEF("${CEF_PLATFORM}" "${CEF_VERSION}" "${CMAKE_CURRENT_BINARY_DIR}/cef")
+
+# Mirror CEF Resources/ (icudtl.dat, *.pak, locales/) next to every libcef.so
+foreach(CEF_RUNTIME_DIR "${CEF_ROOT}/Debug" "${CEF_ROOT}/Release")
+    if(IS_DIRECTORY "${CEF_RUNTIME_DIR}")
+        file(COPY "${CEF_ROOT}/Resources/" DESTINATION "${CEF_RUNTIME_DIR}/")
+    endif()
+endforeach()
 
 # add cef's cmake files to the lookup so we can use those directly
 list(APPEND CMAKE_MODULE_PATH "${CEF_ROOT}/cmake")
@@ -737,7 +744,27 @@ REPLACED_SET_EXECUTABLE_TARGET_PROPERTIES(linux-wallpaperengine-lib)
 add_executable(linux-wallpaperengine
     src/main.cpp)
 
-target_link_libraries (linux-wallpaperengine PUBLIC linux-wallpaperengine-lib)
+# Chromium re-randomizes the stack canary (%fs:0x28) during child process
+# initialization (--change-stack-guard-on-fork=enable). main()'s frame saved
+# the original canary before CefExecuteProcess, so every CEF child that
+# finishes gets a false-positive "stack smashing detected" abort on return.
+# main() has no stack buffers, drop the protector for this file only.
+set_source_files_properties (src/main.cpp PROPERTIES
+    COMPILE_OPTIONS "-fno-stack-protector")
+
+# the CEF bundle ships without a SUID chrome-sandbox helper and Ubuntu 24.04+
+# restricts unprivileged user namespaces (apparmor), so CEF's own sandbox init
+# cannot work: run without it (WebBrowserContext reads this define)
+target_compile_definitions(linux-wallpaperengine-lib PUBLIC CEF_NO_SANDBOX)
+
+# Chromium's libcef defines a close() wrapper that resolves libc's close with
+# dlsym(RTLD_NEXT). If libcef is only a transitive dependency of
+# liblinux-wallpaperengine-lib.so, RTLD_NEXT cannot find libc and CefInitialize
+# aborts with "close symbol missing". Force libcef.so to be the first
+# DT_NEEDED entry of the executable.
+target_link_libraries (linux-wallpaperengine PUBLIC
+    "-Wl,--no-as-needed $<TARGET_FILE:libcef_lib> -Wl,--as-needed"
+    linux-wallpaperengine-lib)
 
 # Install the main executable and shared library via install(TARGETS)
 # so that CMake automatically strips/replaces the build-time RPATH.

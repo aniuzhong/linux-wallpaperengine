@@ -61,7 +61,7 @@ WebBrowserContext::WebBrowserContext (WallpaperEngine::Application::WallpaperApp
     if (!commandLine->HasSwitch ("type")) {
 	this->m_browserApplication = new CEF::BrowserApp (wallpaperApplication);
     } else {
-	this->m_browserApplication = new CEF::SubprocessApp (wallpaperApplication);
+	this->m_browserApplication = new CEF::SubprocessApp ({});
     }
 
     // this blocks for anything not-main-thread
@@ -75,13 +75,22 @@ WebBrowserContext::WebBrowserContext (WallpaperEngine::Application::WallpaperApp
 
     // Configurate Chromium
     CefSettings settings;
-    std::string cache_path = (std::filesystem::temp_directory_path () / uuid::generate_uuid_v4 ()).string ();
+    this->m_cachePath = std::filesystem::temp_directory_path () / uuid::generate_uuid_v4 ();
+    std::string cache_path = this->m_cachePath.string ();
     // CefString(&settings.locales_dir_path) = "OffScreenCEF/godot/locales";
     // CefString(&settings.resources_dir_path) = "OffScreenCEF/godot/";
     // CefString(&settings.framework_dir_path) = "OffScreenCEF/godot/";
     // CefString(&settings.cache_path) = "OffScreenCEF/godot/";
     //  CefString(&settings.browser_subprocess_path) = "path/to/client"
     cef_string_utf8_to_utf16 (cache_path.c_str (), cache_path.length (), &settings.root_cache_path);
+
+    // pin CEF resource lookups to the executable directory instead of the
+    // loaded libcef.so location (rpath order dependent)
+    std::filesystem::path exeDir = std::filesystem::canonical ("/proc/self/exe").parent_path ();
+    std::string resourcesPath = exeDir.string ();
+    std::string localesPath = (exeDir / "locales").string ();
+    cef_string_utf8_to_utf16 (resourcesPath.c_str (), resourcesPath.length (), &settings.resources_dir_path);
+    cef_string_utf8_to_utf16 (localesPath.c_str (), localesPath.length (), &settings.locales_dir_path);
     settings.windowless_rendering_enabled = true;
 #if defined(CEF_NO_SANDBOX)
     settings.no_sandbox = true;
@@ -97,4 +106,9 @@ WebBrowserContext::WebBrowserContext (WallpaperEngine::Application::WallpaperApp
 WebBrowserContext::~WebBrowserContext () {
     sLog.out ("Shutting down CEF");
     CefShutdown ();
+
+    // the profile is recreated from scratch on every run, remove it so it
+    // does not keep piling up in /tmp (or tmpfs RAM) after every session
+    std::error_code error;
+    std::filesystem::remove_all (this->m_cachePath, error);
 }

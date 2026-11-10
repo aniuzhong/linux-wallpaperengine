@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <csignal>
 #include <random>
 
 #include "WallpaperEngine/Application/ApplicationContext.h"
@@ -34,6 +35,11 @@ public:
     explicit WallpaperApplication (ApplicationContext& context);
 
     /**
+     * Tears the application down in an order CEF and OpenGL can cope with.
+     */
+    ~WallpaperApplication ();
+
+    /**
      * Prepares the application for rendering.
      */
     void setup ();
@@ -55,6 +61,15 @@ public:
      * @param signal
      */
     void signal (int signal);
+
+    /**
+     * Registers the async-signal-safe flag the render loop polls on every
+     * iteration. OS signal handlers may interrupt any thread, so they cannot
+     * call into the application: they only write the flag
+     *
+     * @param flag flag storage owned by main()
+     */
+    void setStopFlag (const volatile sig_atomic_t* flag) { this->m_stopFlag = flag; }
     /**
      * @return Maps screens to loaded backgrounds
      */
@@ -184,5 +199,7 @@ private:
     uint32_t m_nextFrameScreenshot = 0;
     std::chrono::steady_clock::time_point m_pauseStart {};
     GLuint m_destinationFramebuffer = 0;
+    /** async-signal-safe stop flag written by the OS signal handler */
+    const volatile sig_atomic_t* m_stopFlag = nullptr;
 };
 } // namespace WallpaperEngine::Application

@@ -47,7 +47,9 @@ private:
     WallpaperEngine::WebBrowser::WebBrowserContext& m_browserContext;
     CefRefPtr<CefBrowser> m_browser = nullptr;
     CefRefPtr<WallpaperEngine::WebBrowser::CEF::BrowserClient> m_client = nullptr;
-    WallpaperEngine::WebBrowser::CEF::RenderHandler* m_renderHandler = nullptr;
+    // refcounted like every CEF interface implementation: released when the
+    // last CefRefPtr (ours and the client's) goes away, never delete it
+    CefRefPtr<WallpaperEngine::WebBrowser::CEF::RenderHandler> m_renderHandler = nullptr;
 
     int m_width = 16;
     int m_height = 17;

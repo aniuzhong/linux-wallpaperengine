@@ -70,6 +70,20 @@ WallpaperApplication::WallpaperApplication (ApplicationContext& context) : m_con
     this->initializePlaylists ();
 }
 
+WallpaperApplication::~WallpaperApplication () {
+    // members would otherwise be destroyed in reverse declaration order, which
+    // runs CefShutdown (m_browserContext) while the web wallpapers are still
+    // alive and makes their CEF callbacks crash or hang afterwards. The
+    // wallpapers must also go away while the video driver still provides the
+    // GL context their destructors use, so:
+    // 1. destroy the wallpapers (closes every CEF browser and waits for it)
+    // 2. destroy the video driver (window + GL context)
+    // 3. shut CEF down last, with no browsers left alive
+    this->m_renderContext.reset ();
+    this->m_videoDriver.reset ();
+    this->m_browserContext.reset ();
+}
+
 void WallpaperApplication::initializeSubsystems () {
     // initialize player dbus (update every 2 seconds)
     m_mediaSource = std::make_unique<WallpaperEngine::Media::DBusMediaSource> (std::chrono::milliseconds (2000));
@@ -988,7 +1002,7 @@ void WallpaperApplication::cleanup () {
 
 void WallpaperApplication::show () {
     setup ();
-    while (this->m_context.state.general.keepRunning) {
+    while (this->m_context.state.general.keepRunning && (this->m_stopFlag == nullptr || *this->m_stopFlag == 0)) {
 	render ();
     }
     cleanup ();

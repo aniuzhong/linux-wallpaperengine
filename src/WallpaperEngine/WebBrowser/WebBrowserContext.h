@@ -22,5 +22,7 @@ private:
     CefRefPtr<CefApp> m_browserApplication = nullptr;
     CefRefPtr<CefCommandLine> m_commandLine = nullptr;
     WallpaperEngine::Application::WallpaperApplication& m_wallpaperApplication;
+    /** throwaway per-run Chromium profile, removed again on shutdown */
+    std::filesystem::path m_cachePath;
 };
 } // namespace WallpaperEngine::WebBrowser
