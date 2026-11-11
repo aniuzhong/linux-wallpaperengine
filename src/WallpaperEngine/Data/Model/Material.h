@@ -49,6 +49,8 @@ struct MaterialPass {
     ComboMap combos;
     /** Constant shader values (e.g., overbright, bloom settings) */
     ShaderConstantMap constants;
+    /** User property name -> shader uniform/material name mapping (usershadervalues) */
+    std::map<std::string, std::string> userShaderValues;
 };
 
 struct Material {

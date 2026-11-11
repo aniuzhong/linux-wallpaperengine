@@ -43,18 +43,55 @@ MaterialPassUniquePtr MaterialParser::parsePass (const JSON& it, const Project& 
     const auto usertextures = it.optional ("usertextures");
     const auto combos = it.optional ("combos");
     const auto constants = it.optional ("constantshadervalues");
+    const auto userShaderValues = it.optional ("usershadervalues");
+
+    std::map<std::string, std::string> parsedUserShaderValues = {};
+
+    if (userShaderValues.has_value () && userShaderValues->is_object ()) {
+	for (const auto& cur : userShaderValues->items ()) {
+	    if (cur.value ().is_string ()) {
+		parsedUserShaderValues.emplace (cur.key (), cur.value ().get<std::string> ());
+	    }
+	}
+    }
+
+    // depthtest/depthwrite/cullmode stay Unknown when the material does not
+    // specify them; model objects enable depth and backface culling for those
+    // while 2d content keeps the legacy disabled behavior, explicit values are
+    // always respected
+    // WE writes the depth keys in two spellings, depthtest/depthwrite is the
+    // common form while depthtesting/depthwriting shows up in e.g. ricepod's
+    // orbital materials; an unparsed alternate spelling would silently flip
+    // the pass to the default depth state
+    auto depthtestField = it.optional ("depthtest");
+
+    if (!depthtestField.has_value ()) {
+	depthtestField = it.optional ("depthtesting");
+    }
+
+    auto depthwriteField = it.optional ("depthwrite");
+
+    if (!depthwriteField.has_value ()) {
+	depthwriteField = it.optional ("depthwriting");
+    }
+
+    const auto cullmodeField = it.optional ("cullmode");
 
     return std::make_unique<MaterialPass> (MaterialPass {
 	// TODO: REMOVE THIS UGLY STD::STRING CREATION
 	.blending = parseBlendMode (it.optional ("blending", std::string ("normal"))),
-	.cullmode = parseCullMode (it.optional ("cullmode", std::string ("nocull"))),
-	.depthtest = parseDepthtestMode (it.optional ("depthtest", std::string ("disabled"))),
-	.depthwrite = parseDepthwriteMode (it.optional ("depthwrite", std::string ("disabled"))),
+	.cullmode
+	= cullmodeField.has_value () ? parseCullMode (cullmodeField->get<std::string> ()) : CullingMode_Unknown,
+	.depthtest = depthtestField.has_value () ? parseDepthtestMode (depthtestField->get<std::string> ())
+						 : DepthtestMode_Unknown,
+	.depthwrite = depthwriteField.has_value () ? parseDepthwriteMode (depthwriteField->get<std::string> ())
+						   : DepthwriteMode_Unknown,
 	.shader = it.require<std::string> ("shader", "Material pass must have a shader"),
 	.textures = textures.has_value () ? TextureParser::parseTextureMap (*textures) : TextureMap {},
 	.usertextures = usertextures.has_value () ? TextureParser::parseTextureMap (*usertextures) : TextureMap {},
 	.combos = combos.has_value () ? parseCombos (*combos) : ComboMap {},
 	.constants = constants.has_value () ? ShaderConstantParser::parse (*constants, project) : ShaderConstantMap {},
+	.userShaderValues = std::move (parsedUserShaderValues),
     });
 }
 

@@ -10,6 +10,7 @@
 #include "WallpaperEngine/Data/Builders/ColorBuilder.h"
 #include "WallpaperEngine/Data/Model/Object.h"
 #include "WallpaperEngine/Data/Model/Project.h"
+#include "WallpaperEngine/Data/Model/Property.h"
 #include "WallpaperEngine/Logging/Log.h"
 
 #include <exception>
@@ -144,6 +145,59 @@ ObjectParser::parseModelObject (const JSON& it, const Project& project, ObjectDa
 	// whole scene; keep parsing the other layers and skip this object.
 	sLog.error ("Failed to load model ", model, ": ", e.what ());
 	return std::make_unique<Object> (std::move (base));
+    }
+
+    // model rendering happens in 3d space: passes that don't specify depth
+    // behavior default to testing and writing, explicit material values are
+    // kept as written (e.g. bgfade's depthwrite disabled)
+    for (const auto& section : file->sections) {
+	for (auto& material : section.materials) {
+	    for (auto& pass : material->passes) {
+		if (pass->depthtest == DepthtestMode_Unknown) {
+		    pass->depthtest = DepthtestMode_Enabled;
+		}
+
+		if (pass->depthwrite == DepthwriteMode_Unknown) {
+		    pass->depthwrite = DepthwriteMode_Enabled;
+		}
+
+		// WE culls backfaces on model materials unless the pass
+		// opts out with an explicit "nocull"
+		if (pass->cullmode == CullingMode_Unknown) {
+		    pass->cullmode = CullingMode_Normal;
+		}
+
+		// selfillum passes are glow/effect geometry (engine flames, lights):
+		// they must not write depth or they occlude the opaque body that
+		// renders after them
+		if (pass->combos.contains ("selfillum")) {
+		    pass->depthwrite = DepthwriteMode_Disabled;
+		}
+
+		// resolve usershadervalues (project property name -> shader material
+		// name) into property-backed pass constants
+		for (const auto& [propertyName, materialKey] : pass->userShaderValues) {
+		    const auto propertyIt = project.properties.find (propertyName);
+
+		    if (propertyIt == project.properties.end ()) {
+			continue;
+		    }
+
+		    const PropertySharedPtr& property = propertyIt->second;
+
+		    // snapshot the property value with the right type, then keep
+		    // tracking it for live updates
+		    auto value = std::make_unique<DynamicValue> (static_cast<const DynamicValue&> (*property));
+		    value->connect (property.get ());
+
+		    pass->constants.insert_or_assign (
+			materialKey,
+			std::make_unique<UserSetting> (UserSetting {
+			    .value = std::move (value), .property = property, .condition = std::nullopt })
+		    );
+		}
+	    }
+	}
     }
 
     sLog.out ("Loaded model ", model, " (", file->version, ", ", file->sections.size (), " sections)");
