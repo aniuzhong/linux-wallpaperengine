@@ -352,6 +352,15 @@ void CPass::setupRenderReferenceUniforms () {
 		    value->id, 1, GL_FALSE, glm::value_ptr (*static_cast<const glm::mat4*> (*value->value))
 		);
 		break;
+	    case Matrix4AsMatrix3:
+		glUniformMatrix3fv (
+		    value->id, 1, GL_FALSE, glm::value_ptr (glm::mat3 (*static_cast<const glm::mat4*> (*value->value)))
+		);
+		break;
+	    case Vector3Array:
+	    case Vector4Array:
+		// arrays are never registered as reference uniforms, nothing to upload
+		break;
 	    case Matrix3:
 		glUniformMatrix3fv (
 		    value->id, 1, GL_FALSE, glm::value_ptr (*static_cast<const glm::mat3*> (*value->value))
@@ -388,6 +397,17 @@ void CPass::setupRenderUniforms () {
 		glUniformMatrix4fv (
 		    value->id, 1, GL_FALSE, glm::value_ptr (*static_cast<const glm::mat4*> (value->value))
 		);
+		break;
+	    case Matrix4AsMatrix3:
+		glUniformMatrix3fv (
+		    value->id, 1, GL_FALSE, glm::value_ptr (glm::mat3 (*static_cast<const glm::mat4*> (value->value)))
+		);
+		break;
+	    case Vector3Array:
+		glUniform3fv (value->id, value->count, glm::value_ptr (*static_cast<const glm::vec3*> (value->value)));
+		break;
+	    case Vector4Array:
+		glUniform4fv (value->id, value->count, glm::value_ptr (*static_cast<const glm::vec4*> (value->value)));
 		break;
 	    case Matrix3:
 		glUniformMatrix3fv (
@@ -939,6 +959,17 @@ template <typename T> void CPass::addUniform (const std::string& name, UniformTy
 	return;
     }
 
+    // model shaders declare g_ModelMatrix in both mat4 and mat3 flavors
+    // (grid.vert uses mat3), adapt the upload type to what the program
+    // actually declared
+    if (type == Matrix4) {
+	const GLint declaredType = this->getDeclaredUniformType (id);
+
+	if (declaredType == GL_FLOAT_MAT3) {
+	    type = Matrix4AsMatrix3;
+	}
+    }
+
     // free the uniform that's already registered if it's there already
 
     if (const auto it = this->m_uniforms.find (name); it != this->m_uniforms.end ()) {
@@ -968,6 +999,34 @@ template <typename T> void CPass::addUniform (const std::string& name, UniformTy
     this->m_referenceUniforms.insert_or_assign (
 	name, new ReferenceUniformEntry (id, name, type, reinterpret_cast<const void**> (value))
     );
+}
+
+GLint CPass::getDeclaredUniformType (GLint location) const {
+    GLint activeUniforms = 0;
+    glGetProgramiv (this->m_programID, GL_ACTIVE_UNIFORMS, &activeUniforms);
+
+    for (GLint i = 0; i < activeUniforms; i++) {
+	GLchar nameBuffer[256];
+	GLsizei length = 0;
+	GLint size = 0;
+	GLenum type = 0;
+
+	glGetActiveUniform (this->m_programID, i, sizeof (nameBuffer), &length, &size, &type, nameBuffer);
+
+	// arrays get reported with a name[] suffix, strip it for the lookup
+	std::string name (nameBuffer, static_cast<size_t> (length));
+	const size_t arrayMark = name.find ('[');
+
+	if (arrayMark != std::string::npos) {
+	    name.resize (arrayMark);
+	}
+
+	if (glGetUniformLocation (this->m_programID, name.c_str ()) == location) {
+	    return static_cast<GLint> (type);
+	}
+    }
+
+    return 0;
 }
 
 void CPass::setupShaderVariables () {
@@ -1095,6 +1154,14 @@ void CPass::addUniform (const std::string& name, const glm::vec4* value) {
 
 void CPass::addUniform (const std::string& name, const glm::vec4** value) {
     this->addUniform (name, UniformType::Vector4, value);
+}
+
+void CPass::addUniform (const std::string& name, const glm::vec3* value, const int count) {
+    this->addUniform (name, UniformType::Vector3Array, value, count);
+}
+
+void CPass::addUniform (const std::string& name, const glm::vec4* value, const int count) {
+    this->addUniform (name, UniformType::Vector4Array, value, count);
 }
 
 void CPass::addUniform (const std::string& name, const glm::mat3& value) {

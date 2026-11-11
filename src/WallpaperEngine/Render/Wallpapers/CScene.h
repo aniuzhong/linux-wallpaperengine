@@ -57,7 +57,7 @@ public:
 
 protected:
     void renderFrame (const glm::ivec4& viewport) override;
-    void setupFramebuffers () override;
+    void setupFramebuffers (bool sceneDepthBuffer) override;
     void updateUVs (const glm::ivec4& viewport, const bool vflip) override;
     void updateMouse (const glm::ivec4& viewport);
 

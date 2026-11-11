@@ -68,6 +68,9 @@ public:
     void addUniform (const std::string& name, const glm::vec3* value);
     void addUniform (const std::string& name, const glm::vec4* value);
     void addUniform (const std::string& name, const glm::mat4* value);
+    /** Array uniforms, value points to `count` contiguous elements */
+    void addUniform (const std::string& name, const glm::vec3* value, int count);
+    void addUniform (const std::string& name, const glm::vec4* value, int count);
 
 private:
     struct TextureChainEntry {
@@ -83,7 +86,12 @@ private:
 	Vector2 = 4,
 	Vector3 = 5,
 	Vector4 = 6,
-	Double = 7
+	Double = 7,
+	/** the source is a mat4 but the shader declares the uniform as mat3 */
+	Matrix4AsMatrix3 = 8,
+	/** fixed-size arrays, value points to `count` contiguous elements */
+	Vector3Array = 9,
+	Vector4Array = 10
     };
 
     class UniformEntry {
@@ -169,6 +177,7 @@ private:
     void bindTextureOverrides (uint32_t currentTexture, std::shared_ptr<const TextureProvider>& texture0) const;
     void setupRenderUniforms ();
     void setupRenderReferenceUniforms ();
+    [[nodiscard]] GLint getDeclaredUniformType (GLint location) const;
     void setupRenderAttributes () const;
     void renderGeometry () const;
     void cleanupRenderSetup ();

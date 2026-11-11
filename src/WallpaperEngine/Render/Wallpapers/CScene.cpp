@@ -113,8 +113,10 @@ CScene::CScene (
 	this->m_camera->setOrthogonalProjection (windowWidth, windowHeight);
     }
 
-    // setup framebuffers here as they're required for the scene setup
-    this->setupFramebuffers ();
+    // setup framebuffers here as they're required for the scene setup;
+    // 3D scenes depth-test their models, so only their scene framebuffer gets
+    // a depth attachment
+    this->setupFramebuffers (isPerspective);
 
     // intermediate render targets follow the render resolution, not the projection:
     // effect shaders address them through g_TexelSize, which tracks the scene FBO
@@ -464,15 +466,16 @@ const glm::vec2* CScene::getTexelSize () const { return &this->m_texelSize; }
 
 const glm::vec2* CScene::getTexelSizeHalf () const { return &this->m_texelSizeHalf; }
 
-void CScene::setupFramebuffers () {
-    const uint32_t width = static_cast<uint32_t> (glm::max (1.0f, this->m_renderWidth));
-    const uint32_t height = static_cast<uint32_t> (glm::max (1.0f, this->m_renderHeight));
+void CScene::setupFramebuffers (bool sceneDepthBuffer) {
+    const auto width = static_cast<uint32_t> (glm::max (1.0f, this->m_renderWidth));
+    const auto height = static_cast<uint32_t> (glm::max (1.0f, this->m_renderHeight));
     const uint32_t clamp = this->getState ().getClampingMode ();
 
     // create framebuffer for the scene at the render resolution, scenes render
     // directly at screen resolution instead of the projection size
     this->m_sceneFBO = this->create (
-	"_rt_FullFrameBuffer", TextureFormat_ARGB8888, clamp, 1.0, { width, height }, { width, height }
+	"_rt_FullFrameBuffer", TextureFormat_ARGB8888, clamp, 1.0, { width, height }, { width, height },
+	sceneDepthBuffer
     );
 
     this->alias ("_rt_MipMappedFrameBuffer", "_rt_FullFrameBuffer");

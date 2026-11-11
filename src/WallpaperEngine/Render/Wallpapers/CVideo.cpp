@@ -14,7 +14,7 @@ CVideo::CVideo (
     const WallpaperState::TextureUVsScaling& scalingMode, const uint32_t& clampMode
 ) : CWallpaper (wallpaper, context, audioContext, scalingMode, clampMode) {
     // setup framebuffers
-    this->setupFramebuffers ();
+    this->setupFramebuffers (false);
 
     const std::filesystem::path videopath
 	= this->getVideo ().project.assetLocator->physicalPath (this->getVideo ().filename);

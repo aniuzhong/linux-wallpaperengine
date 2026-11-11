@@ -165,7 +165,7 @@ protected:
     /**
      * Setups OpenGL's framebuffers for ping-pong and scene rendering
      */
-    virtual void setupFramebuffers ();
+    virtual void setupFramebuffers (bool sceneDepthBuffer);
 
     /**
      * Size the scene renders at in pixels (output viewport * render scale).

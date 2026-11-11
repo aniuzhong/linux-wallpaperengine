@@ -21,7 +21,7 @@ CWeb::CWeb (
     const WallpaperState::TextureUVsScaling& scalingMode, const uint32_t& clampMode
 ) : CWallpaper (wallpaper, context, audioContext, scalingMode, clampMode), m_browserContext (browserContext) {
     // setup framebuffers
-    this->setupFramebuffers ();
+    this->setupFramebuffers (false);
 
     CefWindowInfo window_info;
     window_info.SetAsWindowless (0);
