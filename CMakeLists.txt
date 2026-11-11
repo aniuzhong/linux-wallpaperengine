@@ -475,6 +475,7 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Render/Wallpapers/CWeb.h
     src/WallpaperEngine/Render/Wallpapers/CWeb.cpp
     src/WallpaperEngine/Render/Camera.h
+    src/WallpaperEngine/Render/CameraProjection.h
     src/WallpaperEngine/Render/Camera.cpp
     src/WallpaperEngine/Render/CObject.h
     src/WallpaperEngine/Render/CObject.cpp
@@ -621,7 +622,8 @@ if(BUILD_TESTING)
         src/WallpaperEngine/Testing/Cases/PropertyParser.cpp
         src/WallpaperEngine/Testing/Cases/DynamicValueParser.cpp
         src/WallpaperEngine/Testing/Cases/ColorBuilder.cpp
-        src/WallpaperEngine/Testing/Cases/PulseAudioPlayingDetector.cpp)
+        src/WallpaperEngine/Testing/Cases/PulseAudioPlayingDetector.cpp
+        src/WallpaperEngine/Testing/Cases/Camera.cpp)
 endif()
 
 add_library(

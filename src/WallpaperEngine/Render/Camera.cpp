@@ -2,6 +2,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "Camera.h"
+#include "CameraProjection.h"
 
 using namespace WallpaperEngine;
 using namespace WallpaperEngine::Render;
@@ -27,6 +28,8 @@ const glm::mat4& Camera::getLookAt () const { return this->m_lookat; }
 
 bool Camera::isOrthogonal () const { return this->m_isOrthogonal; }
 
+bool Camera::isYFlipped () const { return this->m_isYFlipped; }
+
 Wallpapers::CScene& Camera::getScene () const { return this->m_scene; }
 
 float Camera::getWidth () const { return this->m_width; }
@@ -49,4 +52,19 @@ void Camera::setOrthogonalProjection (const float width, const float height) {
     this->m_projection = glm::ortho<float> (-width / 2.0, width / 2.0, -height / 2.0, height / 2.0, nearz, farz);
     this->m_projection = glm::translate (this->m_projection, this->getEye ());
     this->m_isOrthogonal = true;
+    this->m_isYFlipped = false;
+}
+
+void Camera::setPerspectiveProjection (const float width, const float height, const bool flipY) {
+    this->m_width = width;
+    this->m_height = height;
+
+    const float aspect = height > 0.0f ? width / height : 1.0f;
+
+    this->m_projection = CameraProjection::buildPerspectiveProjection (
+	this->getFov (), aspect, this->getNearZ (), this->getFarZ (), flipY
+    );
+
+    this->m_isOrthogonal = false;
+    this->m_isYFlipped = flipY;
 }
