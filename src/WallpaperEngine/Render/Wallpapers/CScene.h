@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 #include "WallpaperEngine/Render/Camera.h"
 
 #include "WallpaperEngine/Render/CWallpaper.h"
@@ -51,6 +53,12 @@ public:
     [[nodiscard]] const std::vector<CObject*>& getObjectsByRenderOrder () const;
     [[nodiscard]] const CObject* getObject (int id) const;
 
+    /** Fixed number of light slots WE materials receive (g_LightsPosition/g_LightsColorRadius) */
+    static constexpr int kMaxShaderLights = 4;
+
+    [[nodiscard]] const glm::vec3* getLightPositions () const { return this->m_lightPositions.data (); }
+    [[nodiscard]] const glm::vec4* getLightColorsRadius () const { return this->m_lightColorsRadius.data (); }
+
     /** Clamps a parallax offset so a layer covering the shown region cannot be
      * displaced past its own bounds (which would expose the clear color) */
     [[nodiscard]] glm::vec2 clampParallaxOffset (const glm::vec2& offset, const glm::vec2& scaledSize) const;
@@ -67,6 +75,8 @@ private:
     Render::CObject* createObject (const Object& object);
     Render::CObject* dispatchObjectType (const Object& object);
     void addObjectToRenderOrder (const Object& object);
+    /** Refreshes the shader light arrays from the scene's light objects */
+    void updateLights ();
 
     std::unique_ptr<Scripting::ScriptEngine> m_scriptEngine;
     std::unique_ptr<Camera> m_camera;
@@ -81,6 +91,9 @@ private:
     glm::vec2 m_texelSizeHalf = {};
     ObjectUniquePtr m_bloomObjectData;
     CObject* m_bloomObject = nullptr;
+    /** Shader light state, refreshed each frame from the scene's light objects */
+    std::array<glm::vec3, kMaxShaderLights> m_lightPositions = {};
+    std::array<glm::vec4, kMaxShaderLights> m_lightColorsRadius = {};
     std::map<int, CObject*> m_objects = {};
     std::vector<CObject*> m_objectsByRenderOrder = {};
     std::vector<DynamicValue*> m_scriptedValues = {};

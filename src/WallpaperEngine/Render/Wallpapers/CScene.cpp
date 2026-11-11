@@ -1,4 +1,5 @@
 #include "WallpaperEngine/Render/Objects/CImage.h"
+#include "WallpaperEngine/Render/Objects/CModel.h"
 #include "WallpaperEngine/Render/Objects/CParticle.h"
 #include "WallpaperEngine/Render/Objects/CSound.h"
 #include "WallpaperEngine/Render/Objects/CText.h"
@@ -128,6 +129,16 @@ CScene::CScene (
 	{ sceneWidth, sceneHeight }
     );
     this->alias ("_alias_lightCookie", "_rt_shadowAtlas");
+
+    // model materials sample the reflection render target (e.g. the grid in
+    // Fantastic Car); real reflections are not implemented yet, create an empty
+    // FBO so the texture chain resolves and renders
+    if (isPerspective) {
+	this->create (
+	    "_rt_Reflection", TextureFormat_ARGB8888, TextureFlags_ClampUVs, 1.0, { sceneWidth, sceneHeight },
+	    { sceneWidth, sceneHeight }
+	);
+    }
 
     // set clear color
     const glm::vec3 clearColor = scene->colors.clear->value->getVec3 ();
@@ -284,10 +295,7 @@ Render::CObject* CScene::dispatchObjectType (const Object& object) {
     } else if (object.is<Text> ()) {
 	renderObject = new Objects::CText (*this, *object.as<Text> ());
     } else if (object.is<ModelObject> ()) {
-	// 3D model rendering arrives in the next slice; keep the object parsed but
-	// do not create a generic placeholder for it.
-	sLog.out ("Loaded 3D model object ", object.id, " (", object.name, "); rendering is not implemented yet");
-	return nullptr;
+	renderObject = new Objects::CModel (*this, *object.as<ModelObject> ());
     } else if (object.is<LightObject> ()) {
 	// lights carry no visual; their state feeds shader uniforms in a later slice
 	return nullptr;
@@ -356,6 +364,33 @@ void CScene::addObjectToRenderOrder (const Object& object) {
     }
 }
 
+void CScene::updateLights () {
+    this->m_lightPositions.fill (glm::vec3 (0.0f));
+    this->m_lightColorsRadius.fill (glm::vec4 (0.0f));
+
+    int slot = 0;
+
+    for (const auto& object : this->getScene ().objects) {
+	if (!object->is<LightObject> () || slot >= kMaxShaderLights) {
+	    continue;
+	}
+
+	const auto& light = *object->as<LightObject> ();
+
+	if (!light.groupVisible->value->getBool ()) {
+	    continue;
+	}
+
+	// WE packs the shader light as color * intensity with the falloff
+	// radius in the alpha slot (ComputeLightSpecular's linear attenuation)
+	const glm::vec3 color = light.color->value->getVec3 () * light.intensity->value->getFloat ();
+
+	this->m_lightPositions[slot] = light.origin->value->getVec3 ();
+	this->m_lightColorsRadius[slot] = glm::vec4 (color, light.radius->value->getFloat ());
+	slot++;
+    }
+}
+
 ScriptEngine& CScene::getScriptEngine () const { return *this->m_scriptEngine; }
 Camera& CScene::getCamera () const { return *this->m_camera; }
 
@@ -383,6 +418,9 @@ void CScene::renderFrame (const glm::ivec4& viewport) {
 
     // run a tick in the javascript logic
     this->getScriptEngine ().tick ();
+
+    // refresh the shader light arrays so materials pick up current light state
+    this->updateLights ();
 
     // update main textures for images
     for (const auto& cur : this->m_objectsByRenderOrder) {
@@ -412,6 +450,9 @@ void CScene::renderFrame (const glm::ivec4& viewport) {
     // ensure we render over the whole framebuffer
     glViewport (0, 0, this->m_sceneFBO->getRealWidth (), this->m_sceneFBO->getRealHeight ());
 
+    // depth clear is ignored while the depth mask is off (the last pass of a
+    // frame may leave it disabled, e.g. translucent model materials)
+    glDepthMask (GL_TRUE);
     glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     for (const auto& cur : this->m_objectsByRenderOrder) {

@@ -9,6 +9,7 @@
 
 #include "WallpaperEngine/Render/CFBO.h"
 #include "WallpaperEngine/Render/Objects/CImage.h"
+#include "WallpaperEngine/Render/Wallpapers/CScene.h"
 
 #include "WallpaperEngine/Render/Shaders/Variables/ShaderVariable.h"
 #include "WallpaperEngine/Render/Shaders/Variables/ShaderVariableFloat.h"
@@ -872,6 +873,14 @@ void CPass::setupUniforms () {
     // lighting variables
     this->addUniform ("g_LightAmbientColor", sceneData.colors.ambient->value->getVec3 ());
     this->addUniform ("g_LightSkylightColor", sceneData.colors.skylight->value->getVec3 ());
+    // camera position: skybox shaders translate the mesh by it and lighting
+    // computes the view direction from it
+    this->addUniform ("g_EyePosition", &scene.getCamera ().getEye ());
+    // dynamic point lights, WE exposes 4 slots to materials; the arrays stay
+    // zeroed when the scene has no light objects (CScene::updateLights fills
+    // them every frame, so the pointer values stay live)
+    this->addUniform ("g_LightsPosition", scene.getLightPositions (), Wallpapers::CScene::kMaxShaderLights);
+    this->addUniform ("g_LightsColorRadius", scene.getLightColorsRadius (), Wallpapers::CScene::kMaxShaderLights);
     // register variables like brightness and alpha with some default value
     this->addUniform ("g_Brightness", renderable.getBrightness ());
     this->addUniform ("g_UserAlpha", renderable.getUserAlpha ());
