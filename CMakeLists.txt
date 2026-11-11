@@ -629,7 +629,8 @@ if(BUILD_TESTING)
         src/WallpaperEngine/Testing/Cases/Camera.cpp
         src/WallpaperEngine/Testing/Cases/SceneProjection.cpp
         src/WallpaperEngine/Testing/Cases/MeshParser.cpp
-        src/WallpaperEngine/Testing/Cases/ObjectParser.cpp)
+        src/WallpaperEngine/Testing/Cases/ObjectParser.cpp
+        src/WallpaperEngine/Testing/Cases/ShaderUnit.cpp)
 endif()
 
 add_library(

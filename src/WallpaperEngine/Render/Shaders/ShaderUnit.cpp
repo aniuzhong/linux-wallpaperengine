@@ -466,8 +466,32 @@ std::string ShaderUnit::applyLinkedVaryingCompatibility (std::string source) con
 	    const std::string prefix = assignmentMatch[1].str ();
 	    const std::string indent = assignmentMatch[2].str ();
 	    const std::string expression = assignmentMatch[3].str ();
-	    const std::string replacement = prefix + indent + name + " = vec4(" + expression + ", 0.0, 1.0);";
 	    const size_t position = offset + assignmentMatch.position ();
+
+	    // only pad expressions that actually produce a vec2: the source is
+	    // scanned without evaluating #if blocks, so assignments living in
+	    // dead branches (e.g. generic.vert's LIGHTMAP path assigning the
+	    // already-vec4 a_TexCoordVec4) would otherwise get wrapped into an
+	    // invalid vec4(vec4, 0.0, 1.0) constructor
+	    static const std::regex bareIdentifier ("^[A-Za-z_][A-Za-z0-9_]*$");
+	    bool alreadyVec4 = false;
+
+	    if (std::regex_match (expression, bareIdentifier)) {
+		const std::regex vec4Declaration (
+		    R"(\b(?:attribute|varying|uniform)\s+vec4\s+)" + expression + "\\s*;"
+		);
+
+		if (std::regex_search (source, vec4Declaration)) {
+		    alreadyVec4 = true;
+		}
+	    }
+
+	    if (alreadyVec4) {
+		offset = position + assignmentMatch.length ();
+		continue;
+	    }
+
+	    const std::string replacement = prefix + indent + name + " = vec4(" + expression + ", 0.0, 1.0);";
 	    source.replace (position, assignmentMatch.length (), replacement);
 	    offset = position + replacement.length ();
 	}
