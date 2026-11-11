@@ -34,11 +34,16 @@ CScene::CScene (
     // setup the scene camera
     this->m_camera = std::make_unique<Camera> (*this, scene->camera);
 
-    float width = scene->camera.projection.width;
-    float height = scene->camera.projection.height;
+    float width = static_cast<float> (scene->camera.projection.width);
+    float height = static_cast<float> (scene->camera.projection.height);
+    const bool isPerspective = scene->camera.projection.isPerspective;
 
-    // detect size if the orthogonal project is auto
-    if (scene->camera.projection.isAuto) {
+    // 3D scenes have no authored projection size; render at the output resolution
+    if (isPerspective) {
+	width = static_cast<float> (this->getContext ().getOutput ().getFullWidth ());
+	height = static_cast<float> (this->getContext ().getOutput ().getFullHeight ());
+    } else if (scene->camera.projection.isAuto) {
+	// detect size if the orthogonal project is auto
 	glm::vec2 maxExtent = { 0.0f, 0.0f };
 
 	for (const auto& object : scene->objects) {
@@ -62,8 +67,8 @@ CScene::CScene (
 	    width = maxExtent.x * 2.0f;
 	    height = maxExtent.y * 2.0f;
 	} else {
-	    width = this->getContext ().getOutput ().getFullWidth ();
-	    height = this->getContext ().getOutput ().getFullHeight ();
+	    width = static_cast<float> (this->getContext ().getOutput ().getFullWidth ());
+	    height = static_cast<float> (this->getContext ().getOutput ().getFullHeight ());
 	    sLog.debug ("Auto projection: falling back to screen resolution ", width, "x", height);
 	}
     }
@@ -83,24 +88,30 @@ CScene::CScene (
     // time (which bilinearly upscales pixel art into a blur), adapt the camera's orthogonal
     // window to the render target's aspect ratio so the scene renders directly at screen
     // resolution — the same world region ends up visible, matching Wallpaper Engine semantics
-    float windowWidth = width;
-    float windowHeight = height;
+    if (isPerspective) {
+	// 3D scenes render through a perspective camera; the output's present-time
+	// vertical flip decides whether the projection needs to be mirrored.
+	this->m_camera->setPerspectiveProjection (width, height, this->getContext ().getOutput ().renderVFlip ());
+    } else {
+	float windowWidth = width;
+	float windowHeight = height;
 
-    if (this->getState ().getTextureUVsScaling () != WallpaperState::TextureUVsScaling::StretchUVs) {
-	const float m1 = this->m_renderWidth / width;
-	const float m2 = this->m_renderHeight / height;
-	// cover (default/fill) crops the overflowing axis, fit letterboxes with clear color
-	const float m = this->getState ().getTextureUVsScaling () == WallpaperState::TextureUVsScaling::ZoomFitUVs
-	    ? glm::min (m1, m2)
-	    : glm::max (m1, m2);
+	if (this->getState ().getTextureUVsScaling () != WallpaperState::TextureUVsScaling::StretchUVs) {
+	    const float m1 = this->m_renderWidth / width;
+	    const float m2 = this->m_renderHeight / height;
+	    // cover (default/fill) crops the overflowing axis, fit letterboxes with clear color
+	    const float m = this->getState ().getTextureUVsScaling () == WallpaperState::TextureUVsScaling::ZoomFitUVs
+		? glm::min (m1, m2)
+		: glm::max (m1, m2);
 
-	if (m > 0.0f) {
-	    windowWidth = this->m_renderWidth / m;
-	    windowHeight = this->m_renderHeight / m;
+	    if (m > 0.0f) {
+		windowWidth = this->m_renderWidth / m;
+		windowHeight = this->m_renderHeight / m;
+	    }
 	}
-    }
 
-    this->m_camera->setOrthogonalProjection (windowWidth, windowHeight);
+	this->m_camera->setOrthogonalProjection (windowWidth, windowHeight);
+    }
 
     // setup framebuffers here as they're required for the scene setup
     this->setupFramebuffers ();

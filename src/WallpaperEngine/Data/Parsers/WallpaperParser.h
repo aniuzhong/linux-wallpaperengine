@@ -10,6 +10,11 @@ using namespace WallpaperEngine::Data::Model;
 class WallpaperParser {
 public:
     static WallpaperUniquePtr parse (const JSON& file, Project& project);
+    /**
+     * Wallpaper Engine 2D scenes carry an orthogonalprojection object; 3D scenes
+     * set it to null or omit it (and keep fov/nearz/farz at the general level).
+     */
+    [[nodiscard]] static bool isPerspectiveScene (const JSON& general);
 
 private:
     static SceneUniquePtr parseScene (const JSON& file, Project& project);

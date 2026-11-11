@@ -21,14 +21,22 @@ WallpaperUniquePtr WallpaperParser::parse (const JSON& file, Project& project) {
     }
 }
 
+bool WallpaperParser::isPerspectiveScene (const JSON& general) {
+    const auto projection = general.find ("orthogonalprojection");
+    return projection == general.end () || projection->is_null () || !projection->is_object ();
+}
+
 SceneUniquePtr WallpaperParser::parseScene (const JSON& file, Project& project) {
     const auto scene = JSON::parse (project.assetLocator->readString (file));
     const auto camera = scene.require ("camera", "Scenes must have a camera section");
     const auto general = scene.require ("general", "Scenes must have a general section");
-    const auto projection
-	= general.require ("orthogonalprojection", "General section must have orthogonal projection info");
+    const bool isPerspective = isPerspectiveScene (general);
+    const auto projectionIt = general.find ("orthogonalprojection");
+    const auto projection = isPerspective ? JSON::object () : *projectionIt;
     const auto objects = scene.require ("objects", "Scenes must have an objects section");
     const auto& properties = project.properties;
+    // 3D scenes author the projection values in "general", 2D scenes in "camera"
+    const JSON& projectionSource = isPerspective ? general : camera;
 
     // TODO: FIND IF THESE DEFAULTS ARE SENSIBLE OR NOT AND PERFORM PROPER VALIDATION WHEN CAMERA PREVIEW AND CAMERA
     // PARALLAX ARE PRESENT
@@ -69,12 +77,13 @@ SceneUniquePtr WallpaperParser::parseScene (const JSON& file, Project& project) 
                     .up = camera.require <glm::vec3> ("up", "Camera must have an up position"),
                 },
                 .projection = {
-                    .width  = projection.optional ("auto", false) ? 0 : projection.require <int> ("width",  "Projection must have a width"),
-                    .height = projection.optional ("auto", false) ? 0 : projection.require <int> ("height", "Projection must have a height"),
-                    .isAuto = projection.optional ("auto", false),
-                    .nearz = camera.user ("nearz", properties, 0.0f),
-                    .farz = camera.user ("farz", properties, 1000.0f),
-                    .fov = camera.user ("fov", properties, 50.0f)
+                    .width  = isPerspective || projection.optional ("auto", false) ? 0 : projection.require <int> ("width",  "Projection must have a width"),
+                    .height = isPerspective || projection.optional ("auto", false) ? 0 : projection.require <int> ("height", "Projection must have a height"),
+                    .isAuto = !isPerspective && projection.optional ("auto", false),
+                    .isPerspective = isPerspective,
+                    .nearz = projectionSource.user ("nearz", properties, 0.0f),
+                    .farz = projectionSource.user ("farz", properties, 1000.0f),
+                    .fov = projectionSource.user ("fov", properties, 50.0f)
                 }
             },
             .objects = parseObjects (objects, project),

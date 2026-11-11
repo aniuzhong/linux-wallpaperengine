@@ -623,7 +623,8 @@ if(BUILD_TESTING)
         src/WallpaperEngine/Testing/Cases/DynamicValueParser.cpp
         src/WallpaperEngine/Testing/Cases/ColorBuilder.cpp
         src/WallpaperEngine/Testing/Cases/PulseAudioPlayingDetector.cpp
-        src/WallpaperEngine/Testing/Cases/Camera.cpp)
+        src/WallpaperEngine/Testing/Cases/Camera.cpp
+        src/WallpaperEngine/Testing/Cases/SceneProjection.cpp)
 endif()
 
 add_library(
