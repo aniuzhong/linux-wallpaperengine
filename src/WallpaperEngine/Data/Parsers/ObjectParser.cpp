@@ -1,6 +1,7 @@
 #include "ObjectParser.h"
 #include "EffectParser.h"
 #include "MaterialParser.h"
+#include "MeshParser.h"
 #include "ModelParser.h"
 
 #include "ShaderConstantParser.h"
@@ -11,6 +12,7 @@
 #include "WallpaperEngine/Data/Model/Project.h"
 #include "WallpaperEngine/Logging/Log.h"
 
+#include <exception>
 #include <glm/gtc/constants.hpp>
 #include <sstream>
 
@@ -22,6 +24,7 @@ ObjectUniquePtr ObjectParser::parse (const JSON& it, const Project& project) {
     const auto soundIt = it.find ("sound");
     const auto particleIt = it.find ("particle");
     const auto textIt = it.find ("text");
+    const auto modelIt = it.find ("model");
     const auto lightIt = it.find ("light");
     // use shape to refer to VolumeLight
     const auto shapeIt = it.find ("shape");
@@ -75,12 +78,14 @@ ObjectUniquePtr ObjectParser::parse (const JSON& it, const Project& project) {
 	return parseImage (it, project, std::move (basedata), *imageIt);
     } else if (soundIt != it.end () && soundIt->is_array ()) {
 	return parseSound (it, std::move (basedata));
+    } else if (modelIt != it.end () && modelIt->is_string () && !modelIt->get<std::string> ().empty ()) {
+	return parseModelObject (it, project, std::move (basedata), *modelIt);
     } else if (hasParticle) {
 	return parseParticle (it, project, std::move (basedata));
     } else if (textIt != it.end ()) {
 	return parseText (it, project, std::move (basedata));
-    } else if (lightIt != it.end ()) {
-	sLog.error ("Light objects are not supported yet");
+    } else if (lightIt != it.end () && lightIt->is_string () && !lightIt->get<std::string> ().empty ()) {
+	return parseLight (it, project, std::move (basedata));
     } else if (shapeIt != it.end ()) {
 	sLog.error ("VolumeLight objects are not supported yet");
     } else {
@@ -124,6 +129,43 @@ SoundUniquePtr ObjectParser::parseSound (const JSON& it, ObjectData base) {
 	SoundData {
 	    .playbackmode = it.optional<std::string> ("playbackmode"),
 	    .sounds = sounds,
+	}
+    );
+}
+
+ObjectUniquePtr
+ObjectParser::parseModelObject (const JSON& it, const Project& project, ObjectData base, const std::string& model) {
+    ModelFileUniquePtr file = nullptr;
+
+    try {
+	file = MeshParser::load (project, model);
+    } catch (const std::exception& e) {
+	// An unsupported model version (or a missing material) must not abort the
+	// whole scene; keep parsing the other layers and skip this object.
+	sLog.error ("Failed to load model ", model, ": ", e.what ());
+	return std::make_unique<Object> (std::move (base));
+    }
+
+    sLog.out ("Loaded model ", model, " (", file->version, ", ", file->sections.size (), " sections)");
+
+    return std::make_unique<ModelObject> (
+	std::move (base),
+	ModelObjectData {
+	    .file = std::move (file),
+	    .skin = it.optional ("skin", 0),
+	    .reflected = it.optional ("reflected", false),
+	}
+    );
+}
+
+LightObjectUniquePtr ObjectParser::parseLight (const JSON& it, const Project& project, ObjectData base) {
+    return std::make_unique<LightObject> (
+	std::move (base),
+	LightObjectData {
+	    .type = it.optional ("light", std::string ("point")),
+	    .color = it.user ("color", project.properties, glm::vec3 (1.0f)),
+	    .intensity = it.user ("intensity", project.properties, 1.0f),
+	    .radius = it.user ("radius", project.properties, 10.0f),
 	}
     );
 }

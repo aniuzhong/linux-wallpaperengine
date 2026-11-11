@@ -281,6 +281,14 @@ Render::CObject* CScene::dispatchObjectType (const Object& object) {
 	renderObject = new Objects::CSound (*this, *object.as<Sound> ());
     } else if (object.is<Text> ()) {
 	renderObject = new Objects::CText (*this, *object.as<Text> ());
+    } else if (object.is<ModelObject> ()) {
+	// 3D model rendering arrives in the next slice; keep the object parsed but
+	// do not create a generic placeholder for it.
+	sLog.out ("Loaded 3D model object ", object.id, " (", object.name, "); rendering is not implemented yet");
+	return nullptr;
+    } else if (object.is<LightObject> ()) {
+	// lights carry no visual; their state feeds shader uniforms in a later slice
+	return nullptr;
     } else if (object.is<Particle> ()) {
 	const auto& particleData = *object.as<Particle> ();
 

@@ -12,6 +12,7 @@
 #include "Effect.h"
 #include "Material.h"
 #include "Model.h"
+#include "ModelFile.h"
 #include "Types.h"
 #include "UserSetting.h"
 #include "WallpaperEngine/Data/Utils/TypeCaster.h"
@@ -144,6 +145,47 @@ public:
     explicit Sound (ObjectData data, SoundData soundData) noexcept :
 	Object (std::move (data)), SoundData (std::move (soundData)) { };
     ~Sound () override = default;
+};
+
+/**
+ * A 3D model object, rendered from a compiled .mdl file
+ */
+struct ModelObjectData {
+    /** The parsed .mdl model file */
+    ModelFileUniquePtr file;
+    /** Which material set (skin) the sections render with */
+    int skin;
+    /** Whether the object participates in reflections */
+    bool reflected;
+};
+
+class ModelObject : public Object, public ModelObjectData {
+public:
+    explicit ModelObject (ObjectData data, ModelObjectData modelData) noexcept :
+	Object (std::move (data)), ModelObjectData (std::move (modelData)) { };
+    ~ModelObject () override = default;
+};
+
+/**
+ * A scene light object, feeds the g_LightsPosition/g_LightsColorRadius
+ * shader arrays later (Wallpaper Engine exposes 4 slots to materials)
+ */
+struct LightObjectData {
+    /** Light type as written in the scene, point lights are the common case */
+    std::string type;
+    /** Light color */
+    UserSettingUniquePtr color;
+    /** Multiplier applied to the light color */
+    UserSettingUniquePtr intensity;
+    /** Falloff radius, the light contributes nothing past it */
+    UserSettingUniquePtr radius;
+};
+
+class LightObject : public Object, public LightObjectData {
+public:
+    explicit LightObject (ObjectData data, LightObjectData lightData) noexcept :
+	Object (std::move (data)), LightObjectData (std::move (lightData)) { };
+    ~LightObject () override = default;
 };
 
 /**
