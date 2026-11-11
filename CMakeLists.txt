@@ -526,6 +526,7 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Data/Model/Material.h
     src/WallpaperEngine/Data/Model/Effect.h
     src/WallpaperEngine/Data/Model/Model.h
+    src/WallpaperEngine/Data/Model/ModelFile.h
     src/WallpaperEngine/Data/Model/UserSetting.h
     src/WallpaperEngine/Data/Model/DynamicValue.h
     src/WallpaperEngine/Data/Model/DynamicValue.cpp
@@ -551,6 +552,8 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Data/Parsers/MaterialParser.h
     src/WallpaperEngine/Data/Parsers/ModelParser.cpp
     src/WallpaperEngine/Data/Parsers/ModelParser.h
+    src/WallpaperEngine/Data/Parsers/MeshParser.cpp
+    src/WallpaperEngine/Data/Parsers/MeshParser.h
     src/WallpaperEngine/Data/Parsers/ShaderConstantParser.cpp
     src/WallpaperEngine/Data/Parsers/ShaderConstantParser.h
     src/WallpaperEngine/Data/Parsers/PackageParser.cpp
@@ -624,7 +627,8 @@ if(BUILD_TESTING)
         src/WallpaperEngine/Testing/Cases/ColorBuilder.cpp
         src/WallpaperEngine/Testing/Cases/PulseAudioPlayingDetector.cpp
         src/WallpaperEngine/Testing/Cases/Camera.cpp
-        src/WallpaperEngine/Testing/Cases/SceneProjection.cpp)
+        src/WallpaperEngine/Testing/Cases/SceneProjection.cpp
+        src/WallpaperEngine/Testing/Cases/MeshParser.cpp)
 endif()
 
 add_library(

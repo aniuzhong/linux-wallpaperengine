@@ -10,7 +10,9 @@ using namespace WallpaperEngine::Data::Parsers;
 using namespace WallpaperEngine::Data::Model;
 
 MaterialUniquePtr MaterialParser::load (const Project& project, const std::string& filename) {
-    const auto materialJson = JSON::parse (project.assetLocator->readString (filename));
+    // Wallpaper Engine's json dialect allows comments (often used to
+    // disable keys), let the JSON parser ignore them.
+    const auto materialJson = JSON::parse (project.assetLocator->readString (filename), nullptr, true, true);
 
     return parse (materialJson, filename, project);
 }

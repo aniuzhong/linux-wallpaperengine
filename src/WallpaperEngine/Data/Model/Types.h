@@ -33,6 +33,7 @@ struct FBO;
 struct Effect;
 struct EffectPass;
 struct ModelStruct;
+struct ModelFile;
 
 using PropertySharedPtr = std::shared_ptr<Property>;
 using Properties = std::map<std::string, PropertySharedPtr>;
@@ -60,6 +61,7 @@ using ImageEffectPassOverrideUniquePtr = std::unique_ptr<ImageEffectPassOverride
 using EffectPassUniquePtr = std::unique_ptr<EffectPass>;
 using FBOUniquePtr = std::unique_ptr<FBO>;
 using ModelUniquePtr = std::unique_ptr<ModelStruct>;
+using ModelFileUniquePtr = std::unique_ptr<ModelFile>;
 
 using ObjectList = std::vector<ObjectUniquePtr>;
 using ComboMap = std::map<std::string, int>;
