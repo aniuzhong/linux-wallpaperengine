@@ -76,6 +76,7 @@ static void scale (void* data, wl_output* wl_output, int32_t scale) {
     }
 }
 
+#ifdef WL_OUTPUT_NAME_SINCE_VERSION
 static void name (void* data, wl_output* wl_output, const char* name) {
     const auto viewport = static_cast<WaylandOutputViewport*> (data);
 
@@ -90,6 +91,7 @@ static void name (void* data, wl_output* wl_output, const char* name) {
 static void description (void* data, wl_output* wl_output, const char* description) {
     // ignored
 }
+#endif
 
 static void surfaceFrameCallback (void* data, struct wl_callback* cb, uint32_t time) {
     const auto viewport = static_cast<WaylandOutputViewport*> (data);
@@ -104,8 +106,14 @@ static void surfaceFrameCallback (void* data, struct wl_callback* cb, uint32_t t
 
 constexpr struct wl_callback_listener frameListener = { .done = surfaceFrameCallback };
 
+// wl_output_listener grew the name/description events in wayland 1.21, older
+// headers (like the 1.18 on this system) don't have those members
+#ifdef WL_OUTPUT_NAME_SINCE_VERSION
 constexpr wl_output_listener outputListener
     = { .geometry = geometry, .mode = mode, .done = done, .scale = scale, .name = name, .description = description };
+#else
+constexpr wl_output_listener outputListener = { .geometry = geometry, .mode = mode, .done = done, .scale = scale };
+#endif
 
 constexpr struct zwlr_layer_surface_v1_listener layerSurfaceListener = {
     .configure = handleLSConfigure,
