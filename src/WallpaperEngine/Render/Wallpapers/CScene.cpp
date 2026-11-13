@@ -419,6 +419,9 @@ void CScene::renderFrame (const glm::ivec4& viewport) {
     // run a tick in the javascript logic
     this->getScriptEngine ().tick ();
 
+    // advance the camera path animation before drawing anything
+    this->m_camera->tick ();
+
     // refresh the shader light arrays so materials pick up current light state
     this->updateLights ();
 

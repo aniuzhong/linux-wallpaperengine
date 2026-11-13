@@ -529,6 +529,8 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Data/Model/Effect.h
     src/WallpaperEngine/Data/Model/Model.h
     src/WallpaperEngine/Data/Model/ModelFile.h
+    src/WallpaperEngine/Data/Model/CameraPath.h
+    src/WallpaperEngine/Data/Model/CameraPath.cpp
     src/WallpaperEngine/Data/Model/UserSetting.h
     src/WallpaperEngine/Data/Model/DynamicValue.h
     src/WallpaperEngine/Data/Model/DynamicValue.cpp
@@ -556,6 +558,8 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Data/Parsers/ModelParser.h
     src/WallpaperEngine/Data/Parsers/MeshParser.cpp
     src/WallpaperEngine/Data/Parsers/MeshParser.h
+    src/WallpaperEngine/Data/Parsers/CameraPathParser.cpp
+    src/WallpaperEngine/Data/Parsers/CameraPathParser.h
     src/WallpaperEngine/Data/Parsers/ShaderConstantParser.cpp
     src/WallpaperEngine/Data/Parsers/ShaderConstantParser.h
     src/WallpaperEngine/Data/Parsers/PackageParser.cpp
@@ -632,7 +636,8 @@ if(BUILD_TESTING)
         src/WallpaperEngine/Testing/Cases/SceneProjection.cpp
         src/WallpaperEngine/Testing/Cases/MeshParser.cpp
         src/WallpaperEngine/Testing/Cases/ObjectParser.cpp
-        src/WallpaperEngine/Testing/Cases/ShaderUnit.cpp)
+        src/WallpaperEngine/Testing/Cases/ShaderUnit.cpp
+        src/WallpaperEngine/Testing/Cases/CameraPath.cpp)
 endif()
 
 add_library(

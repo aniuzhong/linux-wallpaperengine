@@ -1,5 +1,6 @@
 #include "WallpaperParser.h"
 
+#include "CameraPathParser.h"
 #include "ObjectParser.h"
 #include "WallpaperEngine/Data/Model/Project.h"
 #include "WallpaperEngine/Data/Model/Wallpaper.h"
@@ -37,6 +38,9 @@ SceneUniquePtr WallpaperParser::parseScene (const JSON& file, Project& project) 
     const auto& properties = project.properties;
     // 3D scenes author the projection values in "general", 2D scenes in "camera"
     const JSON& projectionSource = isPerspective ? general : camera;
+
+    // camera paths drive the camera of 3D scenes, each entry points to a path file
+    auto cameraPaths = parseCameraPaths (camera, project);
 
     // TODO: FIND IF THESE DEFAULTS ARE SENSIBLE OR NOT AND PERFORM PROPER VALIDATION WHEN CAMERA PREVIEW AND CAMERA
     // PARALLAX ARE PRESENT
@@ -84,11 +88,50 @@ SceneUniquePtr WallpaperParser::parseScene (const JSON& file, Project& project) 
                     .nearz = projectionSource.user ("nearz", properties, 0.0f),
                     .farz = projectionSource.user ("farz", properties, 1000.0f),
                     .fov = projectionSource.user ("fov", properties, 50.0f)
-                }
+                },
+                .paths = std::move (cameraPaths),
             },
             .objects = parseObjects (objects, project),
         }
     );
+}
+
+std::vector<CameraPathSource> WallpaperParser::parseCameraPaths (const JSON& camera, const Project& project) {
+    std::vector<CameraPathSource> result = {};
+
+    const auto pathsIt = camera.find ("paths");
+
+    if (pathsIt == camera.end () || !pathsIt->is_array ()) {
+	return result;
+    }
+
+    for (const auto& pathFile : *pathsIt) {
+	if (!pathFile.is_string ()) {
+	    continue;
+	}
+
+	try {
+	    // path files wrap their path definitions in a top level paths array
+	    const auto pathFileData = JSON::parse (project.assetLocator->readString (pathFile.get<std::string> ()));
+	    auto paths = CameraPathParser::parse (pathFileData);
+
+	    if (paths.empty ()) {
+		continue;
+	    }
+
+	    result.push_back (
+		CameraPathSource {
+		    .objectId = std::nullopt,
+		    .queueMode = "sequence",
+		    .paths = std::move (paths),
+		}
+	    );
+	} catch (const std::exception& e) {
+	    sLog.error ("Cannot parse camera path file ", pathFile.get<std::string> (), ": ", e.what ());
+	}
+    }
+
+    return result;
 }
 
 VideoUniquePtr WallpaperParser::parseVideo (const JSON& file, Project& project) {

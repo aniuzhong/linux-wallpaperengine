@@ -1,6 +1,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <cmath>
+
 #include "Camera.h"
 #include "CameraProjection.h"
 
@@ -8,19 +10,82 @@ using namespace WallpaperEngine;
 using namespace WallpaperEngine::Render;
 
 Camera::Camera (Wallpapers::CScene& scene, const SceneData::Camera& camera) :
-    m_width (0), m_height (0), m_camera (camera), m_scene (scene) {
+    m_width (0), m_height (0), m_camera (camera), m_scene (scene), m_pathStart (std::chrono::steady_clock::now ()),
+    m_currentEye (camera.configuration.eye), m_currentCenter (camera.configuration.center),
+    m_currentUp (camera.configuration.up) {
     // get the lookat position
     // TODO: ENSURE THIS IS ONLY USED WHEN NOT DOING AN ORTOGRAPHIC CAMERA AS IT THROWS OFF POINTS
     this->m_lookat = glm::lookAt (this->getEye (), this->getCenter (), this->getUp ());
+
+    for (const auto& source : this->m_camera.paths) {
+	for (const auto& path : source.paths) {
+	    this->m_totalPathDuration += path.duration;
+	}
+    }
+}
+
+void Camera::tick () {
+    if (this->m_camera.paths.empty () || this->m_totalPathDuration <= 0.0f) {
+	return;
+    }
+
+    // paths play back to back and loop as a whole
+    const float elapsed = std::chrono::duration<float> (std::chrono::steady_clock::now () - this->m_pathStart).count ();
+    float pathTime = std::fmod (elapsed, this->m_totalPathDuration);
+
+    // find the path holding this time slice
+    const CameraPath* currentPath = nullptr;
+    const CameraPath* lastPath = nullptr;
+
+    for (const auto& source : this->m_camera.paths) {
+	for (const auto& path : source.paths) {
+	    lastPath = &path;
+
+	    if (pathTime < path.duration) {
+		currentPath = &path;
+		break;
+	    }
+
+	    pathTime -= path.duration;
+	}
+
+	if (currentPath != nullptr) {
+	    break;
+	}
+    }
+
+    if (currentPath == nullptr) {
+	currentPath = lastPath;
+    }
+
+    if (currentPath == nullptr) {
+	return;
+    }
+
+    const CameraTransform fallback = {
+	.center = this->m_currentCenter,
+	.eye = this->m_currentEye,
+	.up = this->m_currentUp,
+	.fov = this->getFov (),
+	.zoom = 1.0f,
+    };
+    const CameraTransform sample = currentPath->evaluate (pathTime, fallback);
+
+    // store the interpolated values so uniforms that follow the camera
+    // (g_EyePosition, skybox shaders) stay in sync with the animation
+    this->m_currentEye = sample.eye;
+    this->m_currentCenter = sample.center;
+    this->m_currentUp = sample.up;
+    this->m_lookat = glm::lookAt (this->m_currentEye, this->m_currentCenter, this->m_currentUp);
 }
 
 Camera::~Camera () = default;
 
-const glm::vec3& Camera::getCenter () const { return this->m_camera.configuration.center; }
+const glm::vec3& Camera::getCenter () const { return this->m_currentCenter; }
 
-const glm::vec3& Camera::getEye () const { return this->m_camera.configuration.eye; }
+const glm::vec3& Camera::getEye () const { return this->m_currentEye; }
 
-const glm::vec3& Camera::getUp () const { return this->m_camera.configuration.up; }
+const glm::vec3& Camera::getUp () const { return this->m_currentUp; }
 
 const glm::mat4& Camera::getProjection () const { return this->m_projection; }
 

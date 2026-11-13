@@ -1,10 +1,12 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include <glm/glm.hpp>
 #include <utility>
 
+#include "CameraPath.h"
 #include "Object.h"
 #include "Types.h"
 #include "WallpaperEngine/Data/Utils/TypeCaster.h"
@@ -104,6 +106,11 @@ struct SceneData {
 	    UserSettingUniquePtr farz;
 	    UserSettingUniquePtr fov;
 	} projection;
+
+	/**
+	 * Camera animation paths, a 3D scene is driven by these when present
+	 */
+	std::vector<CameraPathSource> paths;
     } camera;
 
     ObjectList objects;
