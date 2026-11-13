@@ -1,13 +1,22 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <memory>
+
+#include "WallpaperEngine/Assets/AssetLocator.h"
 #include "WallpaperEngine/Data/JSON.h"
 #include "WallpaperEngine/Data/Model/CameraPath.h"
+#include "WallpaperEngine/Data/Model/Project.h"
+#include "WallpaperEngine/Data/Model/Wallpaper.h"
 #include "WallpaperEngine/Data/Parsers/CameraPathParser.h"
+#include "WallpaperEngine/Data/Parsers/WallpaperParser.h"
+#include "WallpaperEngine/FileSystem/Container.h"
 
 using namespace WallpaperEngine::Data::Model;
 using namespace WallpaperEngine::Data::Parsers;
+using WallpaperEngine::Assets::AssetLocator;
 using WallpaperEngine::Data::JSON::JSON;
+using WallpaperEngine::FileSystem::Container;
 
 TEST_CASE ("Arsenal legacy camera path parses and samples authored keyframes") {
     // Arsenal scripts/camera_00.json path 0: duration 30, two authored transforms.
@@ -106,4 +115,81 @@ TEST_CASE ("2886819832 modern camera curve path is detected but not parsed yet")
     })json");
 
     CHECK (CameraPathParser::parse (data).empty ());
+}
+
+TEST_CASE ("2886819832 camera object drives the scene camera pose and fov") {
+    // Real CameraObject 319 from 2886819832. CameraObject 483 is invisible and
+    // must not win the active-camera selection.
+    const std::string sceneFile = R"json({
+        "camera": {
+            "center": "1.91962 0.22819 -3.03675",
+            "eye": "1.91918 0.26950 -4.03589",
+            "up": "0 1 0"
+        },
+        "general": {
+            "ambientcolor": "0 0 0",
+            "clearcolor": "0 0 0",
+            "orthogonalprojection": null,
+            "skylightcolor": "0 0 0"
+        },
+        "objects": [
+            {
+                "id": 319,
+                "name": "Dynamic Cam",
+                "camera": "default",
+                "path": "scripts/camera_paths_319.json",
+                "queuemode": "random",
+                "fov": 50.0,
+                "zoom": 1.0,
+                "origin": "0.00000 0.71910 0.00000",
+                "angles": "0.00000 3.14159 0.00000",
+                "visible": {
+                    "user": {"condition": "0", "name": "cameratype"},
+                    "value": true
+                }
+            },
+            {
+                "id": 483,
+                "name": "Sonic Cam",
+                "camera": "default",
+                "path": "scripts/camera_paths_483.json",
+                "queuemode": "random",
+                "fov": 39.48,
+                "zoom": 1.0,
+                "origin": "1.94643 0.31207 -4.58597",
+                "angles": "-3.07859 -0.08959 3.14159",
+                "visible": {
+                    "user": {"condition": "1", "name": "cameratype"},
+                    "value": false
+                }
+            }
+        ]
+    })json";
+
+    auto container = std::make_unique<Container> ();
+    container->getVFS ().add ("scene.json", sceneFile);
+    container->getVFS ().add ("scripts/camera_paths_319.json", std::string ("{\"paths\":[]}"));
+    container->getVFS ().add ("scripts/camera_paths_483.json", std::string ("{\"paths\":[]}"));
+
+    Project project {
+	.title = "Sonic CD - Special Stage",
+	.type = Project::Type_Scene,
+	.workshopId = "",
+	.supportsAudioProcessing = false,
+	.properties = {},
+	.wallpaper = nullptr,
+	.assetLocator = std::make_unique<AssetLocator> (std::move (container)),
+    };
+
+    const auto wallpaper = WallpaperParser::parse ("scene.json", project);
+
+    REQUIRE (wallpaper->is<Scene> ());
+    const auto& scene = *wallpaper->as<Scene> ();
+
+    CHECK (scene.camera.configuration.eye.x == Catch::Approx (0.0f));
+    CHECK (scene.camera.configuration.eye.y == Catch::Approx (0.7191f));
+    CHECK (scene.camera.configuration.center.z == Catch::Approx (1.0f));
+    CHECK (scene.camera.configuration.up.y == Catch::Approx (1.0f));
+    CHECK (scene.camera.projection.fov->value->getFloat () == Catch::Approx (50.0f));
+    CHECK (scene.camera.paths.empty ());
 }

@@ -116,3 +116,41 @@ TEST_CASE ("3047596375 (Starscape) object parser builds a ModelObject") {
     const glm::vec3 scale = model->groupScale->value->getVec3 ();
     CHECK (scale.x == Catch::Approx (0.003f));
 }
+
+TEST_CASE ("2886819832 (Sonic CD - Special Stage) object parser builds a CameraObject") {
+    auto project = makeProject ();
+    const auto object = JSON::parse (R"({
+        "id": 319,
+        "name": "Dynamic Cam",
+        "camera": "default",
+        "path": "scripts/camera_paths_319.json",
+        "queuemode": "random",
+        "fov": 50.0,
+        "zoom": 1.0,
+        "origin": "0.00000 0.71910 0.00000",
+        "angles": "0.00000 3.14159 0.00000",
+        "visible": {
+            "user": {"condition": "0", "name": "cameratype"},
+            "value": true
+        }
+    })");
+
+    const auto parsed = ObjectParser::parse (object, project);
+
+    REQUIRE (parsed->is<CameraObject> ());
+    const auto* camera = parsed->as<CameraObject> ();
+    CHECK (camera->id == 319);
+    CHECK (camera->name == "Dynamic Cam");
+    CHECK (camera->camera == "default");
+    CHECK (camera->path == "scripts/camera_paths_319.json");
+    CHECK (camera->queueMode == "random");
+    CHECK (camera->hasFov);
+    CHECK (camera->fov->value->getFloat () == Catch::Approx (50.0f));
+    CHECK (camera->zoom->value->getFloat () == Catch::Approx (1.0f));
+    CHECK (camera->groupVisible->value->getBool ());
+
+    const glm::vec3 origin = camera->origin->value->getVec3 ();
+    CHECK (origin.y == Catch::Approx (0.7191f));
+    const glm::vec3 angles = camera->groupAngles->value->getVec3 ();
+    CHECK (angles.y == Catch::Approx (3.14159f));
+}

@@ -148,6 +148,32 @@ public:
 };
 
 /**
+ * A scene camera object. It has no geometry; its origin/angles and fov drive
+ * the scene camera, and its optional path file drives the camera animation.
+ */
+struct CameraObjectData {
+    /** Camera type, "default" in current Wallpaper Engine scenes */
+    std::string camera;
+    /** Optional camera path file */
+    std::string path;
+    /** Path queue mode, sequence or random */
+    std::string queueMode;
+    /** Whether fov was authored on the camera object itself */
+    bool hasFov = false;
+    /** Camera field of view, either authored or the default */
+    UserSettingUniquePtr fov;
+    /** Camera zoom */
+    UserSettingUniquePtr zoom;
+};
+
+class CameraObject : public Object, public CameraObjectData {
+public:
+    explicit CameraObject (ObjectData data, CameraObjectData cameraData) noexcept :
+	Object (std::move (data)), CameraObjectData (std::move (cameraData)) { };
+    ~CameraObject () override = default;
+};
+
+/**
  * A 3D model object, rendered from a compiled .mdl file
  */
 struct ModelObjectData {

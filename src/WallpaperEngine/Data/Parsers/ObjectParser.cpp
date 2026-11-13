@@ -23,6 +23,7 @@ using namespace WallpaperEngine::Data::Model;
 ObjectUniquePtr ObjectParser::parse (const JSON& it, const Project& project) {
     const auto imageIt = it.find ("image");
     const auto soundIt = it.find ("sound");
+    const auto cameraIt = it.find ("camera");
     const auto particleIt = it.find ("particle");
     const auto textIt = it.find ("text");
     const auto modelIt = it.find ("model");
@@ -79,6 +80,8 @@ ObjectUniquePtr ObjectParser::parse (const JSON& it, const Project& project) {
 	return parseImage (it, project, std::move (basedata), *imageIt);
     } else if (soundIt != it.end () && soundIt->is_array ()) {
 	return parseSound (it, std::move (basedata));
+    } else if (cameraIt != it.end () && cameraIt->is_string () && !cameraIt->get<std::string> ().empty ()) {
+	return parseCameraObject (it, project, std::move (basedata), *cameraIt);
     } else if (modelIt != it.end () && modelIt->is_string () && !modelIt->get<std::string> ().empty ()) {
 	return parseModelObject (it, project, std::move (basedata), *modelIt);
     } else if (hasParticle) {
@@ -130,6 +133,21 @@ SoundUniquePtr ObjectParser::parseSound (const JSON& it, ObjectData base) {
 	SoundData {
 	    .playbackmode = it.optional<std::string> ("playbackmode"),
 	    .sounds = sounds,
+	}
+    );
+}
+
+CameraObjectUniquePtr
+ObjectParser::parseCameraObject (const JSON& it, const Project& project, ObjectData base, const std::string& camera) {
+    return std::make_unique<CameraObject> (
+	std::move (base),
+	CameraObjectData {
+	    .camera = camera,
+	    .path = it.optional ("path", std::string {}),
+	    .queueMode = it.optional ("queuemode", std::string ("sequence")),
+	    .hasFov = it.optional ("fov").has_value (),
+	    .fov = it.user ("fov", project.properties, 50.0f),
+	    .zoom = it.user ("zoom", project.properties, 1.0f),
 	}
     );
 }
