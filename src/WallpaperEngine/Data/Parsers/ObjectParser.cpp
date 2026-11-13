@@ -15,12 +15,20 @@
 
 #include <exception>
 #include <glm/gtc/constants.hpp>
+#include <limits>
 #include <sstream>
 
 using namespace WallpaperEngine::Data::Parsers;
 using namespace WallpaperEngine::Data::Model;
 
 ObjectUniquePtr ObjectParser::parse (const JSON& it, const Project& project) {
+    // Start far away from authored ids and from the engine's internal bloom
+    // object (id -1), so synthetic ids cannot collide with either.
+    int syntheticObjectId = std::numeric_limits<int>::min ();
+    return parse (it, project, syntheticObjectId);
+}
+
+ObjectUniquePtr ObjectParser::parse (const JSON& it, const Project& project, int& syntheticObjectId) {
     const auto imageIt = it.find ("image");
     const auto soundIt = it.find ("sound");
     const auto cameraIt = it.find ("camera");
@@ -37,44 +45,45 @@ ObjectUniquePtr ObjectParser::parse (const JSON& it, const Project& project) {
 	    || (particleIt->is_string () && !particleIt->get<std::string> ().empty ()
 		&& particleIt->get<std::string> () != "None"));
 
-    // Parse base object data
-    // Some particle objects have numeric 'name' fields, so handle type mismatches gracefully
-    ObjectData basedata;
-    try {
-	basedata = ObjectData {
-	    .id = it.require<int> ("id", "Object must have an id"),
-	    .name = it.require<std::string> ("name", "Object must have a name"),
-	    .dependencies = parseDependencies (it),
-	    .parent = it.optional<int> ("parent"),
-	    .origin = it.user ("origin", project.properties, glm::vec3 (0.0f)),
-	    .groupScale = it.user ("scale", project.properties, glm::vec3 (1.0f)),
-	    .groupAngles = it.user ("angles", project.properties, glm::vec3 (0.0f)),
-	    .groupVisible = it.user ("visible", project.properties, true),
-	};
-    } catch (const std::exception& e) {
-	sLog.error ("Error parsing object base data: ", e.what ());
-	const auto idIt = it.find ("id");
-	const auto nameIt = it.find ("name");
-	int id = (idIt != it.end () && idIt->is_number ()) ? idIt->get<int> () : -1;
-	std::string name = "unknown";
-	if (nameIt != it.end ()) {
-	    if (nameIt->is_string ()) {
-		name = nameIt->get<std::string> ();
-	    } else if (nameIt->is_number ()) {
-		name = std::to_string (nameIt->get<int> ());
-	    }
+    // Legacy scenes can omit id/name, and old particle objects sometimes store
+    // a numeric name. Check types explicitly instead of letting a throwing
+    // optional<T> conversion abort the whole object.
+    int objectId = -1;
+    const auto idIt = it.find ("id");
+
+    if (idIt != it.end () && idIt->is_number ()) {
+	objectId = idIt->get<int> ();
+    } else {
+	if (idIt != it.end () && !idIt->is_null ()) {
+	    sLog.error ("Invalid object id: ", idIt->dump ());
 	}
-	basedata = ObjectData {
-	    .id = id,
-	    .name = name,
-	    .dependencies = parseDependencies (it),
-	    .parent = it.optional<int> ("parent"),
-	    .origin = it.user ("origin", project.properties, glm::vec3 (0.0f)),
-	    .groupScale = it.user ("scale", project.properties, glm::vec3 (1.0f)),
-	    .groupAngles = it.user ("angles", project.properties, glm::vec3 (0.0f)),
-	    .groupVisible = it.user ("visible", project.properties, true),
-	};
+
+	objectId = syntheticObjectId++;
     }
+
+    std::string objectName = "";
+    const auto nameIt = it.find ("name");
+
+    if (nameIt != it.end ()) {
+	if (nameIt->is_string ()) {
+	    objectName = nameIt->get<std::string> ();
+	} else if (nameIt->is_number ()) {
+	    objectName = nameIt->dump ();
+	} else if (!nameIt->is_null ()) {
+	    sLog.error ("Invalid object name: ", nameIt->dump ());
+	}
+    }
+
+    ObjectData basedata = ObjectData {
+	.id = objectId,
+	.name = objectName,
+	.dependencies = parseDependencies (it),
+	.parent = it.optional<int> ("parent"),
+	.origin = it.user ("origin", project.properties, glm::vec3 (0.0f)),
+	.groupScale = it.user ("scale", project.properties, glm::vec3 (1.0f)),
+	.groupAngles = it.user ("angles", project.properties, glm::vec3 (0.0f)),
+	.groupVisible = it.user ("visible", project.properties, true),
+    };
 
     if (imageIt != it.end () && imageIt->is_string ()) {
 	return parseImage (it, project, std::move (basedata), *imageIt);

@@ -16,6 +16,13 @@ using namespace WallpaperEngine::Data::Model;
 class ObjectParser {
 public:
     static ObjectUniquePtr parse (const JSON& it, const Project& project);
+    /**
+     * Parses a scene object, using syntheticObjectId for objects that omit
+     * their id. Passing one counter through a whole scene keeps the synthetic
+     * ids unique and deterministic. Start it at std::numeric_limits<int>::min()
+     * to keep synthetic ids away from authored ids and CScene's bloom object.
+     */
+    static ObjectUniquePtr parse (const JSON& it, const Project& project, int& syntheticObjectId);
 
 private:
     static std::vector<int> parseDependencies (const JSON& it);

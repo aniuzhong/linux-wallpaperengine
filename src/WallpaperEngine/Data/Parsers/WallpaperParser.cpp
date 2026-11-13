@@ -8,6 +8,7 @@
 #include "WallpaperEngine/FileSystem/Container.h"
 #include "WallpaperEngine/Logging/Log.h"
 
+#include <limits>
 #include <optional>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -240,9 +241,11 @@ WebUniquePtr WallpaperParser::parseWeb (const JSON& file, Project& project) {
 
 ObjectList WallpaperParser::parseObjects (const JSON& objects, const Project& project) {
     ObjectList result = {};
+    // Keep synthetic ids away from authored ids and CScene's bloom object (-1).
+    int syntheticObjectId = std::numeric_limits<int>::min ();
 
     for (const auto& cur : objects) {
-	result.emplace_back (ObjectParser::parse (cur, project));
+	result.emplace_back (ObjectParser::parse (cur, project, syntheticObjectId));
     }
 
     return result;

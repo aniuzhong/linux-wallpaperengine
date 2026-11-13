@@ -17,7 +17,29 @@ ProjectUniquePtr ProjectParser::parse (const JSON& data, AssetLocatorUniquePtr c
     const auto general = data.optional ("general");
     const auto workshopId = data.optional ("workshopid");
     auto actualWorkshopId = std::to_string (--backgroundId);
-    auto type = data.require<std::string> ("type", "Project type missing");
+
+    // Legacy scene projects omit the type entirely. Recognise them by their
+    // JSON scene file; other missing-type projects must not default to scene.
+    std::string type;
+    const auto typeIt = data.find ("type");
+
+    if (typeIt != data.end () && !typeIt->is_null ()) {
+	if (typeIt->is_string ()) {
+	    type = typeIt->get<std::string> ();
+	} else {
+	    sLog.error ("Invalid project type: ", typeIt->dump ());
+	}
+    } else {
+	const auto fileIt = data.find ("file");
+
+	if (fileIt != data.end () && fileIt->is_string () && fileIt->get<std::string> ().ends_with (".json")) {
+	    type = "scene";
+	}
+    }
+
+    if (type.empty ()) {
+	sLog.exception ("Project type missing and cannot be inferred from the main file");
+    }
 
     if (workshopId.has_value ()) {
 	if (workshopId->is_number ()) {

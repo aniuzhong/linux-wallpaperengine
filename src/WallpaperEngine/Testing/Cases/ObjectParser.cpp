@@ -1,7 +1,9 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 
 #include "WallpaperEngine/Assets/AssetLocator.h"
@@ -10,6 +12,7 @@
 #include "WallpaperEngine/Data/Model/Project.h"
 #include "WallpaperEngine/Data/Model/Wallpaper.h"
 #include "WallpaperEngine/Data/Parsers/ObjectParser.h"
+#include "WallpaperEngine/Data/Parsers/ProjectParser.h"
 #include "WallpaperEngine/FileSystem/Container.h"
 
 using namespace WallpaperEngine::Data::Model;
@@ -153,4 +156,102 @@ TEST_CASE ("2886819832 (Sonic CD - Special Stage) object parser builds a CameraO
     CHECK (origin.y == Catch::Approx (0.7191f));
     const glm::vec3 angles = camera->groupAngles->value->getVec3 ();
     CHECK (angles.y == Catch::Approx (3.14159f));
+}
+
+TEST_CASE ("Audiophile legacy project loads as a scene with unique object ids") {
+    // Official default project. project.json omits "type" and every object in
+    // audiophile.json omits "id"/"name"; the model files are intentionally not
+    // mounted, so parseModelObject must keep the base objects instead of
+    // aborting the scene.
+    auto container = std::make_unique<Container> ();
+
+    container->getVFS ().add ("audiophile.json", JSON::parse (R"({
+            "objects": [{
+                "model": "models/audiophile/bars.mdl",
+                "reflected": true
+            }, {
+                "model": "models/audiophile/flow.mdl"
+            }, {
+                "model": "models/audiophile/glow.mdl"
+            }, {
+                "model": "models/grid/grid.mdl",
+                "skin": 1
+            }],
+            "camera": {
+                "eye": "0 0.1 3.3",
+                "center": "0 0.2 2",
+                "up": "0 1 0"
+            },
+            "general": {
+                "supportsaudioprocessing": true,
+                "norecompile" : true,
+                "clearcolor": "0.05 0.05 0.05"
+            }
+        })"));
+
+    const auto project = ProjectParser::parse (
+	JSON::parse (R"({
+            "title": "Audiophile",
+            "preview": "preview.jpg",
+            "file": "audiophile.json",
+            "timestamp": 0,
+            "authorsteamid": "76561197975619619",
+            "official" : true,
+            "general": {
+                "supportsaudioprocessing": true,
+                "properties": {
+                    "schemecolor": {
+                        "type": "color",
+                        "text": "ui_browse_properties_accent_color",
+                        "value": "0.45 1 0.1"
+                    }
+                }
+            }
+        })"),
+	std::make_unique<AssetLocator> (std::move (container))
+    );
+
+    CHECK (project->type == Project::Type_Scene);
+    REQUIRE (project->wallpaper->is<Scene> ());
+
+    const auto& scene = *project->wallpaper->as<Scene> ();
+    REQUIRE (scene.objects.size () == 4);
+
+    std::set<int> ids;
+
+    for (const auto& object : scene.objects) {
+	// -1 is reserved for CScene's internal bloom object.
+	CHECK (object->id < -1);
+	CHECK (object->name.empty ());
+	ids.insert (object->id);
+    }
+
+    CHECK (ids.size () == scene.objects.size ());
+}
+
+TEST_CASE ("Sheep legacy application is not defaulted to scene") {
+    // Sheep also omits "type", but its main file is a Unity application.
+    CHECK_THROWS_AS (
+	ProjectParser::parse (
+	    JSON::parse (R"({
+                "title": "Sheep",
+                "preview": "preview.jpg",
+                "file": "sheep.exe",
+                "authorsteamid": "76561197975619619",
+                "official" : true,
+                "timestamp": 0,
+                "general": {
+                    "properties" : {
+                        "schemecolor" : {
+                            "text" : "Scheme color",
+                            "type" : "color",
+                            "value" : "0.19607843137254902 0.4470588235294118 0.25098039215686274"
+                        }
+                    }
+                }
+            })"),
+	    std::make_unique<AssetLocator> (std::make_unique<Container> ())
+	),
+	std::runtime_error
+    );
 }
