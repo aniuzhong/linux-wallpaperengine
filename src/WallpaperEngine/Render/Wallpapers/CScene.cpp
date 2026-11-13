@@ -131,18 +131,19 @@ CScene::CScene (
     this->alias ("_alias_lightCookie", "_rt_shadowAtlas");
 
     // model materials sample the reflection render target (e.g. the grid in
-    // Fantastic Car); real reflections are not implemented yet, create an empty
-    // FBO so the texture chain resolves and renders
+    // Fantastic Car); the pass below fills it with the mirrored reflected
+    // models. It needs its own depth buffer because models depth-test inside it.
     if (isPerspective) {
-	this->create (
+	this->_rt_Reflection = this->create (
 	    "_rt_Reflection", TextureFormat_ARGB8888, TextureFlags_ClampUVs, 1.0, { sceneWidth, sceneHeight },
-	    { sceneWidth, sceneHeight }
+	    { sceneWidth, sceneHeight }, true
 	);
     }
 
     // set clear color
     const glm::vec3 clearColor = scene->colors.clear->value->getVec3 ();
 
+    this->m_clearColor = clearColor;
     glClearColor (clearColor.r, clearColor.g, clearColor.b, 1.0f);
 
     // create all objects based off their dependencies
@@ -154,6 +155,9 @@ CScene::CScene (
     for (const auto& object : scene->objects) {
 	this->addObjectToRenderOrder (*object);
     }
+
+    // reflection state is static, resolve it once the objects exist
+    this->setupReflection ();
 
     // create extra framebuffers for the bloom effect
     this->_rt_4FrameBuffer = this->create (
@@ -450,6 +454,10 @@ void CScene::renderFrame (const glm::ivec4& viewport) {
 #endif
     }
 
+    // render the mirrored models into _rt_Reflection before the scene itself;
+    // mirror-surface materials sample it while they draw
+    this->renderReflection ();
+
     // bind the vertex array
     glBindVertexArray (this->m_vaoBuffer);
     // use the scene's framebuffer by default
@@ -473,6 +481,68 @@ void CScene::renderFrame (const glm::ivec4& viewport) {
 
 	cur->render ();
     }
+}
+
+void CScene::setupReflection () {
+    // only perspective scenes have a reflection target to fill
+    if (this->_rt_Reflection == nullptr) {
+	return;
+    }
+
+    for (auto* object : this->m_objectsByRenderOrder) {
+	if (!object->is<Objects::CModel> ()) {
+	    continue;
+	}
+
+	auto* model = object->as<Objects::CModel> ();
+
+	if (model->getModel ().reflected) {
+	    this->m_reflectedModels.push_back (model);
+	}
+
+	// the first surface sampling the target defines the mirror plane
+	// (WE scenes have a single floor)
+	if (!this->m_reflectionPlaneY.has_value () && model->samplesReflection ()) {
+	    this->m_reflectionPlaneY = model->getWorldOriginY ();
+	}
+    }
+
+    if (!this->m_reflectionPlaneY.has_value ()) {
+	this->m_reflectedModels.clear ();
+    }
+}
+
+void CScene::renderReflection () {
+    if (this->_rt_Reflection == nullptr || !this->m_reflectionPlaneY.has_value () || this->m_reflectedModels.empty ()) {
+	return;
+    }
+
+    // the reflection is the original camera viewing the world mirrored over
+    // the mirror plane; the model matrices carry the mirror (see CModel) so
+    // the camera and its uniforms stay untouched
+    glm::mat4 mirror = glm::mat4 (1.0f);
+    mirror[1][1] = -1.0f;
+    mirror[3][1] = 2.0f * *this->m_reflectionPlaneY;
+
+    glBindFramebuffer (GL_FRAMEBUFFER, this->_rt_Reflection->getFramebuffer ());
+    glViewport (
+	0, 0, static_cast<GLsizei> (this->_rt_Reflection->getRealWidth ()),
+	static_cast<GLsizei> (this->_rt_Reflection->getRealHeight ())
+    );
+
+    glDepthMask (GL_TRUE);
+    glClearColor (this->m_clearColor.r, this->m_clearColor.g, this->m_clearColor.b, 1.0f);
+    glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // the world mirror reverses triangle orientation, hand the winding back
+    // so backface culling keeps culling the same faces as the main pass
+    glFrontFace (GL_CW);
+
+    for (auto* model : this->m_reflectedModels) {
+	model->render (this->_rt_Reflection, mirror);
+    }
+
+    glFrontFace (GL_CCW);
 }
 
 void CScene::updateMouse (const glm::ivec4& viewport) {

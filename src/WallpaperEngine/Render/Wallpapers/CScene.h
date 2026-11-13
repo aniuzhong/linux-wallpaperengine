@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <optional>
 
 #include "WallpaperEngine/Render/Camera.h"
 
@@ -10,6 +11,10 @@
 namespace WallpaperEngine::Render {
 class Camera;
 class CObject;
+
+namespace Objects {
+    class CModel;
+}
 }
 
 namespace WallpaperEngine::Render::Wallpapers {
@@ -77,6 +82,14 @@ private:
     void addObjectToRenderOrder (const Object& object);
     /** Refreshes the shader light arrays from the scene's light objects */
     void updateLights ();
+    /** Collects the reflected models and the mirror plane once the scene is set up */
+    void setupReflection ();
+    /**
+     * Renders models marked `reflected` into _rt_Reflection, mirrored over the
+     * mirror surface's plane, so materials sampling the reflection target pick
+     * it up through screen-space UVs. The camera itself stays untouched.
+     */
+    void renderReflection ();
 
     std::unique_ptr<Scripting::ScriptEngine> m_scriptEngine;
     std::unique_ptr<Camera> m_camera;
@@ -94,8 +107,13 @@ private:
     /** Shader light state, refreshed each frame from the scene's light objects */
     std::array<glm::vec3, kMaxShaderLights> m_lightPositions = {};
     std::array<glm::vec4, kMaxShaderLights> m_lightColorsRadius = {};
+    /** Scene clear color, also used to clear the reflection target */
+    glm::vec3 m_clearColor = glm::vec3 (0.0f);
     std::map<int, CObject*> m_objects = {};
     std::vector<CObject*> m_objectsByRenderOrder = {};
+    /** Models rendered into the reflection target, and the plane they mirror over */
+    std::vector<Objects::CModel*> m_reflectedModels = {};
+    std::optional<float> m_reflectionPlaneY = std::nullopt;
     std::vector<DynamicValue*> m_scriptedValues = {};
     glm::vec2 m_mousePosition = {};
     glm::vec2 m_mousePositionLast = {};
@@ -105,5 +123,6 @@ private:
     std::shared_ptr<const CFBO> _rt_8FrameBuffer = nullptr;
     std::shared_ptr<const CFBO> _rt_Bloom = nullptr;
     std::shared_ptr<const CFBO> _rt_shadowAtlas = nullptr;
+    std::shared_ptr<const CFBO> _rt_Reflection = nullptr;
 };
 } // namespace WallpaperEngine::Render::Wallpaper

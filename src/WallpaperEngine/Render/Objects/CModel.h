@@ -32,6 +32,11 @@ public:
      */
     void render (const std::shared_ptr<const CFBO>& destination, const glm::mat4& mirror);
 
+    /** Whether any material pass used by this model samples the reflection target */
+    [[nodiscard]] bool samplesReflection () const;
+    /** World-space Y of the model origin, where the mirror plane sits */
+    [[nodiscard]] float getWorldOriginY () const;
+
     [[nodiscard]] const ModelObject& getModel () const;
 
     [[nodiscard]] const float& getBrightness () const override;

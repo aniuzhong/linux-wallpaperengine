@@ -79,6 +79,24 @@ CModel::~CModel () {
 
 const ModelObject& CModel::getModel () const { return this->m_model; }
 
+bool CModel::samplesReflection () const {
+    for (const auto& section : this->m_model.file->sections) {
+	const Material& material = sectionMaterial (section, this->m_model.skin);
+
+	for (const auto& pass : material.passes) {
+	    for (const auto& [index, texture] : pass->textures) {
+		if (texture == "_rt_Reflection") {
+		    return true;
+		}
+	    }
+	}
+    }
+
+    return false;
+}
+
+float CModel::getWorldOriginY () const { return this->resolveTransform (this->m_model).origin.y; }
+
 const float& CModel::getBrightness () const {
     static const float brightness = 1.0f;
     return brightness;
