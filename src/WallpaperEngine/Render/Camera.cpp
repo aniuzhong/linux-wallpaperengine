@@ -77,6 +77,12 @@ void Camera::tick () {
     this->m_currentCenter = sample.center;
     this->m_currentUp = sample.up;
     this->m_lookat = glm::lookAt (this->m_currentEye, this->m_currentCenter, this->m_currentUp);
+
+    // camera path fov/zoom channels drive the perspective projection too;
+    // legacy paths fall back to the scene fov and zoom 1.0
+    if (!this->m_isOrthogonal) {
+	this->updatePerspectiveProjection (sample.fov, sample.zoom);
+    }
 }
 
 Camera::~Camera () = default;
@@ -123,13 +129,16 @@ void Camera::setOrthogonalProjection (const float width, const float height) {
 void Camera::setPerspectiveProjection (const float width, const float height, const bool flipY) {
     this->m_width = width;
     this->m_height = height;
-
-    const float aspect = height > 0.0f ? width / height : 1.0f;
-
-    this->m_projection = CameraProjection::buildPerspectiveProjection (
-	this->getFov (), aspect, this->getNearZ (), this->getFarZ (), flipY
-    );
-
     this->m_isOrthogonal = false;
     this->m_isYFlipped = flipY;
+
+    this->updatePerspectiveProjection (this->getFov (), 1.0f);
+}
+
+void Camera::updatePerspectiveProjection (const float fov, const float zoom) {
+    const float aspect = this->m_height > 0.0f ? this->m_width / this->m_height : 1.0f;
+
+    this->m_projection = CameraProjection::buildPerspectiveProjection (
+	fov, aspect, this->getNearZ (), this->getFarZ (), this->m_isYFlipped, zoom
+    );
 }

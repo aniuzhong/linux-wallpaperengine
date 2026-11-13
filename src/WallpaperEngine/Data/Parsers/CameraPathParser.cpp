@@ -1,16 +1,27 @@
 #include "CameraPathParser.h"
 
 #include <algorithm>
-#include <cmath>
-#include <numeric>
-
-#include "WallpaperEngine/Logging/Log.h"
 
 using namespace WallpaperEngine::Data::JSON;
 using namespace WallpaperEngine::Data::Model;
 using namespace WallpaperEngine::Data::Parsers;
 
 namespace {
+template <typename T> T numberOr (const JSON& object, const std::string& key, const T fallback = T {}) {
+    const auto value = object.find (key);
+    return value != object.end () && value->is_number () ? value->get<T> () : fallback;
+}
+
+bool boolOr (const JSON& object, const std::string& key, const bool fallback = false) {
+    const auto value = object.find (key);
+    return value != object.end () && value->is_boolean () ? value->get<bool> () : fallback;
+}
+
+std::string stringOr (const JSON& object, const std::string& key, std::string fallback = {}) {
+    const auto value = object.find (key);
+    return value != object.end () && value->is_string () ? value->get<std::string> () : fallback;
+}
+
 float lastTime (const CameraPathChannel& channel) {
     return channel.keyframes.empty () ? 0.0f : channel.keyframes.back ().time;
 }
@@ -29,24 +40,11 @@ float findDuration (const CameraPath& path) {
     return duration;
 }
 
-float keyframeTime (const JSON& transform) {
-    const auto timestamp = transform.find ("timestamp");
-    return timestamp != transform.end () && timestamp->is_number () ? timestamp->get<float> () : 0.0f;
-}
-
 CameraPath parseLegacyPath (const JSON& data) {
     CameraPath result {
-	.name = "",
-	.duration = 0.0f,
+	.name = stringOr (data, "name"),
+	.duration = numberOr (data, "duration", 0.0f),
     };
-
-    if (const auto name = data.find ("name"); name != data.end () && name->is_string ()) {
-	result.name = name->get<std::string> ();
-    }
-
-    if (const auto duration = data.find ("duration"); duration != data.end () && duration->is_number ()) {
-	result.duration = duration->get<float> ();
-    }
 
     const auto transforms = data.find ("transforms");
 
@@ -54,24 +52,24 @@ CameraPath parseLegacyPath (const JSON& data) {
 	return result;
     }
 
-    std::vector<std::size_t> order (transforms->size ());
-    std::iota (order.begin (), order.end (), 0);
+    // Legacy exports are normally chronological, but normalize the order so
+    // every generated channel is ascending without sorting them individually.
+    std::vector<const JSON*> ordered;
+    ordered.reserve (transforms->size ());
 
-    // Legacy exports are normally chronological, but normalize the access
-    // order so evaluate() can rely on ascending timestamps.
-    std::ranges::sort (order, {}, [&transforms] (std::size_t index) { return keyframeTime ((*transforms)[index]); });
-
-    for (const std::size_t index : order) {
-	const auto& transform = (*transforms)[index];
-
-	if (!transform.is_object ()) {
-	    continue;
+    for (const auto& transform : *transforms) {
+	if (transform.is_object ()) {
+	    ordered.push_back (&transform);
 	}
+    }
 
-	const float time = keyframeTime (transform);
-	const auto center = transform.require<glm::vec3> ("center", "Camera path keyframe must have a center");
-	const auto eye = transform.require<glm::vec3> ("eye", "Camera path keyframe must have an eye");
-	const auto up = transform.require<glm::vec3> ("up", "Camera path keyframe must have an up");
+    std::ranges::sort (ordered, {}, [] (const JSON* transform) { return numberOr (*transform, "timestamp", 0.0f); });
+
+    for (const JSON* transform : ordered) {
+	const float time = numberOr (*transform, "timestamp", 0.0f);
+	const auto center = transform->require<glm::vec3> ("center", "Camera path keyframe must have a center");
+	const auto eye = transform->require<glm::vec3> ("eye", "Camera path keyframe must have an eye");
+	const auto up = transform->require<glm::vec3> ("up", "Camera path keyframe must have an up");
 
 	for (int channel = 0; channel < 3; channel++) {
 	    result.center[channel].keyframes.push_back ({ .time = time, .value = center[channel] });
@@ -79,11 +77,11 @@ CameraPath parseLegacyPath (const JSON& data) {
 	    result.up[channel].keyframes.push_back ({ .time = time, .value = up[channel] });
 	}
 
-	if (const auto fov = transform.find ("fov"); fov != transform.end () && fov->is_number ()) {
+	if (const auto fov = transform->find ("fov"); fov != transform->end () && fov->is_number ()) {
 	    result.fov.keyframes.push_back ({ .time = time, .value = fov->get<float> () });
 	}
 
-	if (const auto zoom = transform.find ("zoom"); zoom != transform.end () && zoom->is_number ()) {
+	if (const auto zoom = transform->find ("zoom"); zoom != transform->end () && zoom->is_number ()) {
 	    result.zoom.keyframes.push_back ({ .time = time, .value = zoom->get<float> () });
 	}
     }
@@ -92,16 +90,101 @@ CameraPath parseLegacyPath (const JSON& data) {
     return result;
 }
 
-bool looksLikeCurvePath (const JSON& path) {
-    return path.find ("options") != path.end () || path.find ("center") != path.end ()
-	|| path.find ("eye") != path.end () || path.find ("up") != path.end () || path.find ("fov") != path.end ()
-	|| path.find ("zoom") != path.end ();
+CameraPathHandle parseHandle (const JSON& keyframe, const std::string& name) {
+    const auto handle = keyframe.find (name);
+
+    if (handle == keyframe.end () || !handle->is_object ()) {
+	return {};
+    }
+
+    return CameraPathHandle {
+	.enabled = boolOr (*handle, "enabled"),
+	.offset = glm::vec2 (numberOr (*handle, "x", 0.0f), numberOr (*handle, "y", 0.0f)),
+    };
+}
+
+CameraPathChannel parseChannel (const JSON& data, const float fps) {
+    CameraPathChannel result = {};
+    const float safeFps = fps > 0.0f ? fps : 1.0f;
+
+    if (!data.is_array ()) {
+	return result;
+    }
+
+    for (const auto& keyframe : data) {
+	if (!keyframe.is_object ()) {
+	    continue;
+	}
+
+	result.keyframes.push_back (
+	    CameraPathKeyframe {
+		.time = numberOr (keyframe, "frame", 0.0f) / safeFps,
+		.value = numberOr (keyframe, "value", 0.0f),
+		.incoming = parseHandle (keyframe, "back"),
+		.outgoing = parseHandle (keyframe, "front"),
+	    }
+	);
+    }
+
+    std::ranges::sort (result.keyframes, {}, &CameraPathKeyframe::time);
+    return result;
+}
+
+void parseVectorChannels (const JSON& data, const float fps, std::array<CameraPathChannel, 3>& output) {
+    if (!data.is_object ()) {
+	return;
+    }
+
+    for (std::size_t channel = 0; channel < output.size (); channel++) {
+	const auto value = data.find ("c" + std::to_string (channel));
+
+	if (value != data.end ()) {
+	    output[channel] = parseChannel (*value, fps);
+	}
+    }
+}
+
+CameraPath parseCurvePath (const JSON& data) {
+    float fps = 30.0f;
+    float length = 0.0f;
+
+    if (const auto options = data.find ("options"); options != data.end () && options->is_object ()) {
+	fps = numberOr (*options, "fps", fps);
+	length = numberOr (*options, "length", length);
+    }
+
+    CameraPath result {
+	.name = stringOr (data, "name"),
+	.duration = fps > 0.0f ? length / fps : 0.0f,
+    };
+
+    if (const auto center = data.find ("center"); center != data.end ()) {
+	parseVectorChannels (*center, fps, result.center);
+    }
+
+    if (const auto eye = data.find ("eye"); eye != data.end ()) {
+	parseVectorChannels (*eye, fps, result.eye);
+    }
+
+    if (const auto up = data.find ("up"); up != data.end ()) {
+	parseVectorChannels (*up, fps, result.up);
+    }
+
+    if (const auto fov = data.find ("fov"); fov != data.end ()) {
+	result.fov = parseChannel (*fov, fps);
+    }
+
+    if (const auto zoom = data.find ("zoom"); zoom != data.end ()) {
+	result.zoom = parseChannel (*zoom, fps);
+    }
+
+    result.duration = findDuration (result);
+    return result;
 }
 } // namespace
 
 std::vector<CameraPath> CameraPathParser::parse (const WallpaperEngine::Data::JSON::JSON& data) {
     std::vector<CameraPath> result = {};
-    bool warnedModernCurve = false;
 
     const auto paths = data.find ("paths");
 
@@ -110,34 +193,14 @@ std::vector<CameraPath> CameraPathParser::parse (const WallpaperEngine::Data::JS
     }
 
     for (const auto& path : *paths) {
-	if (!path.is_object ()) {
+	if (!path.is_object () || !boolOr (path, "visible", true)) {
 	    continue;
 	}
 
-	if (const auto visible = path.find ("visible");
-	    visible != path.end () && visible->is_boolean () && !visible->get<bool> ()) {
-	    continue;
-	}
+	CameraPath parsed = path.find ("transforms") != path.end () ? parseLegacyPath (path) : parseCurvePath (path);
 
-	if (path.find ("transforms") != path.end ()) {
-	    CameraPath parsed = parseLegacyPath (path);
-
-	    if (parsed.duration > 0.0f) {
-		result.push_back (std::move (parsed));
-	    }
-
-	    continue;
-	}
-
-	// The newer editor stores per-channel curves (options.fps/length,
-	// center/eye/up c0..c2 channels, fov/zoom and front/back Bezier handles).
-	// PR #632's CameraPathParser/CameraPath design is the reference for that;
-	// keep the warning until a real wallpaper needs it and a fixture exists.
-	if (looksLikeCurvePath (path)) {
-	    if (!warnedModernCurve) {
-		sLog.error ("Modern camera curve paths are not supported yet; using the resting camera pose");
-		warnedModernCurve = true;
-	    }
+	if (parsed.duration > 0.0f) {
+	    result.push_back (std::move (parsed));
 	}
     }
 

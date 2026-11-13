@@ -44,6 +44,8 @@ public:
     [[nodiscard]] float getFarZ () const;
 
 private:
+    void updatePerspectiveProjection (float fov, float zoom);
+
     float m_width;
     float m_height;
     bool m_isOrthogonal = false;

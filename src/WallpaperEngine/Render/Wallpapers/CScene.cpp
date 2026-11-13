@@ -294,6 +294,10 @@ Render::CObject* CScene::dispatchObjectType (const Object& object) {
 	renderObject = new Objects::CSound (*this, *object.as<Sound> ());
     } else if (object.is<Text> ()) {
 	renderObject = new Objects::CText (*this, *object.as<Text> ());
+    } else if (object.is<CameraObject> ()) {
+	// camera objects carry no geometry; their pose/path was consumed by the
+	// parser before the scene started
+	return nullptr;
     } else if (object.is<ModelObject> ()) {
 	renderObject = new Objects::CModel (*this, *object.as<ModelObject> ());
     } else if (object.is<LightObject> ()) {

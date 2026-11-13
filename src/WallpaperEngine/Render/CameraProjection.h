@@ -22,24 +22,28 @@ namespace WallpaperEngine::Render::CameraProjection {
 /**
  * Builds the perspective projection used by 3D scenes.
  *
- * Keeping this pure makes the near-plane and Y-flip policy testable without
- * constructing a Camera. `flipY` mirrors the projection vertically to
+ * Keeping this pure makes the near-plane, zoom and Y-flip policy testable
+ * without constructing a Camera. `zoom` scales the projection's X/Y axes
+ * (values above 1 zoom in), and `flipY` mirrors the projection vertically to
  * compensate the output's present-time flip (see Output::renderVFlip).
  */
 [[nodiscard]] inline glm::mat4 buildPerspectiveProjection (
-    const float fovDegrees, const float aspect, const float nearz, const float farz, const bool flipY
+    const float fovDegrees, const float aspect, const float nearz, const float farz, const bool flipY,
+    const float zoom = 1.0f
 ) {
-    const glm::mat4 projection = glm::perspective<float> (
+    glm::mat4 projection = glm::perspective<float> (
 	glm::radians (glm::clamp (fovDegrees, 1.0f, 179.0f)), aspect > 0.0f ? aspect : 1.0f,
 	resolvePerspectiveNearZ (nearz), farz
     );
 
-    if (!flipY) {
-	return projection;
+    const float effectiveZoom = glm::max (zoom, 0.0001f);
+    projection[0][0] *= effectiveZoom;
+    projection[1][1] *= effectiveZoom;
+
+    if (flipY) {
+	projection[1][1] *= -1.0f;
     }
 
-    glm::mat4 flipped = projection;
-    flipped[1][1] *= -1.0f;
-    return flipped;
+    return projection;
 }
 } // namespace WallpaperEngine::Render::CameraProjection

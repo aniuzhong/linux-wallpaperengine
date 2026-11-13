@@ -63,25 +63,7 @@ TEST_CASE ("Arsenal legacy camera path parses and samples authored keyframes") {
     CHECK (paths[0].evaluate (31.0f, fallback).center.x == Catch::Approx (-2.275f));
 }
 
-TEST_CASE ("2886819832 (Sonic CD - Special Stage) Lap channel clamps authored keyframes") {
-    // 2886819832 scripts/camera_paths_319.json path 7 ("Lap") center.c0:
-    // first three of 11 authored keyframes, at 30 fps.
-    constexpr float fps = 30.0f;
-    const CameraPathChannel channel = {
-	.keyframes = {
-	    { .time = 0.0f, .value = -2.56211f },
-	    { .time = 64.0f / fps, .value = -7.01999f },
-	    { .time = 116.0f / fps, .value = -3.5733f },
-	},
-    };
-
-    CHECK (channel.evaluate (-1.0f, 42.0f) == Catch::Approx (-2.56211f));
-    CHECK (channel.evaluate (32.0f / fps, 42.0f) == Catch::Approx ((-2.56211f + -7.01999f) / 2.0f));
-    CHECK (channel.evaluate (90.0f / fps, 42.0f) == Catch::Approx ((-7.01999f + -3.5733f) / 2.0f));
-    CHECK (channel.evaluate (200.0f / fps, 42.0f) == Catch::Approx (-3.5733f));
-}
-
-TEST_CASE ("2886819832 modern camera curve path is detected but not parsed yet") {
+TEST_CASE ("2886819832 modern camera curve path parses channels and samples") {
     // 2886819832 scripts/camera_paths_319.json path 0 ("Zoom Out"),
     // reduced to the fields that identify a modern curve path.
     const JSON data = JSON::parse (R"json({
@@ -114,7 +96,40 @@ TEST_CASE ("2886819832 modern camera curve path is detected but not parsed yet")
         }]
     })json");
 
-    CHECK (CameraPathParser::parse (data).empty ());
+    const auto paths = CameraPathParser::parse (data);
+
+    REQUIRE (paths.size () == 1);
+    CHECK (paths[0].name == "Zoom Out");
+    CHECK (paths[0].duration == Catch::Approx (10.0f));
+
+    REQUIRE (paths[0].center[0].keyframes.size () == 2);
+    CHECK (paths[0].center[0].keyframes.front ().outgoing.enabled);
+    CHECK (paths[0].center[0].keyframes.front ().outgoing.offset.x == Catch::Approx (1.0f));
+    CHECK (paths[0].center[0].keyframes.front ().outgoing.offset.y == Catch::Approx (0.0f));
+    CHECK (paths[0].center[0].keyframes.back ().incoming.enabled);
+    CHECK (paths[0].center[0].keyframes.back ().incoming.offset.x == Catch::Approx (-1.0f));
+    CHECK (paths[0].center[0].keyframes.back ().incoming.offset.y == Catch::Approx (0.0f));
+    CHECK_FALSE (paths[0].eye[0].keyframes.front ().outgoing.enabled);
+
+    CameraTransform fallback = {};
+    fallback.fov = 60.0f;
+    fallback.zoom = 1.0f;
+    const CameraTransform sampled = paths[0].evaluate (5.0f, fallback);
+
+    CHECK (sampled.center.x == Catch::Approx ((2.23088f + 0.90703f) / 2.0f));
+    CHECK (sampled.center.y == Catch::Approx (fallback.center.y));
+    CHECK (sampled.center.z == Catch::Approx (fallback.center.z));
+    CHECK (sampled.eye.x == Catch::Approx ((1.64439f + 1.22857f) / 2.0f));
+    CHECK (sampled.up.y == Catch::Approx (1.0f));
+    CHECK (sampled.fov == Catch::Approx (50.0f));
+
+    const CameraTransform clamped = paths[0].evaluate (11.0f, fallback);
+    CHECK (clamped.center.x == Catch::Approx (0.90703f));
+
+    // The authored +-1 second handles make the time curve non-linear. At
+    // t=1.84375s the Bezier value differs from plain linear interpolation.
+    const CameraTransform bezier = paths[0].evaluate (1.84375f, fallback);
+    CHECK (bezier.center.x == Catch::Approx (2.02403f).margin (0.0001f));
 }
 
 TEST_CASE ("2886819832 camera object drives the scene camera pose and fov") {
