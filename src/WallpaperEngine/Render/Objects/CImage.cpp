@@ -761,10 +761,22 @@ void CImage::setupPasses () {
 	// TODO: PROPERLY CHECK IF THIS IS ALL THAT'S NEEDED
 	if (!writesToTarget && this->shouldRenderFinalPass (std::next (cur) == end)) {
 	    // TODO: PROPERLY CHECK EFFECT'S VISIBILITY AND TAKE IT INTO ACCOUNT
-	    spacePosition = this->getSceneSpacePosition ();
 	    drawTo = this->getScene ().getFBO ();
-	    projection = &this->m_modelViewProjectionScreen;
-	    inverseProjection = &this->m_modelViewProjectionScreenInverse;
+
+	    // fullscreen layers are post-processing: their composite must cover the
+	    // whole framebuffer, so draw the clip-space quad with an identity
+	    // projection. A perspective camera (model scenes, camera paths) would
+	    // otherwise project the z=0 scene quad mostly off-screen and black the
+	    // wallpaper out
+	    if (this->getImage ().model->fullscreen) {
+		spacePosition = this->getPassSpacePosition ();
+		projection = &this->m_modelViewProjectionPass;
+		inverseProjection = &this->m_modelViewProjectionPassInverse;
+	    } else {
+		spacePosition = this->getSceneSpacePosition ();
+		projection = &this->m_modelViewProjectionScreen;
+		inverseProjection = &this->m_modelViewProjectionScreenInverse;
+	    }
 	}
 
 	pass->setDestination (drawTo);
