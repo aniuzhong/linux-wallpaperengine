@@ -120,6 +120,20 @@ void GLFWOpenGLDriver::dispatchEventQueue () {
 
     // read the full texture into the image
     if (this->m_output->haveImageBuffer ()) {
+	// Rendering a wallpaper may leave a benign GL error behind (complex
+	// scenes do). Discard stale errors before reading the final frame so they
+	// are not misattributed to glReadPixels and abort the wallpaper.
+	GLenum staleError;
+	while ((staleError = glGetError ()) != GL_NO_ERROR) {
+	    sLog.debug ("Discarding stale OpenGL error before readback: ", staleError);
+	}
+
+	// X11 output reads back the default framebuffer. Some scene passes bind
+	// their own FBOs; make sure the read side is the window framebuffer and
+	// that the back buffer is selected.
+	glBindFramebuffer (GL_READ_FRAMEBUFFER, 0);
+	glReadBuffer (GL_BACK);
+
 	// 4.5 supports glReadnPixels, anything older doesn't...
 	if (GLEW_VERSION_4_5) {
 	    glReadnPixels (
