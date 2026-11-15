@@ -25,9 +25,11 @@ TEST_CASE ("3047596375 (Starscape) perspective camera uses the authored projecti
     CHECK (projection[3][2] == Catch::Approx (-(2.0f * farz * nearz) / (farz - nearz)));
 }
 
-TEST_CASE ("3047596375 (Starscape) Y flip follows the output's present-time flip") {
-    // Wayland and GLFW mirror the scene again when presenting it, so their
-    // perspective projection is Y-flipped; X11 is not (see Output::renderVFlip).
+TEST_CASE ("3047596375 (Starscape) perspective Y flip mirrors only the Y axis") {
+    // The projection flip stores the scene FBO in the uniform presentation
+    // convention shared with video textures, so every output renders scenes
+    // Y-flipped; per-output present-time compensation lives in the composite
+    // pass (see Output::renderVFlip).
     constexpr float fov = 50.0f;
     constexpr float nearz = 0.01f;
     constexpr float farz = 11.0f;

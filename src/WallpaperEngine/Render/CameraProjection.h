@@ -24,8 +24,12 @@ namespace WallpaperEngine::Render::CameraProjection {
  *
  * Keeping this pure makes the near-plane, zoom and Y-flip policy testable
  * without constructing a Camera. `zoom` scales the projection's X/Y axes
- * (values above 1 zoom in), and `flipY` mirrors the projection vertically to
- * compensate the output's present-time flip (see Output::renderVFlip).
+ * (values above 1 zoom in), and `flipY` mirrors the projection vertically so
+ * the scene FBO stores content in the uniform presentation convention shared
+ * with video textures. This is a property of the FBO convention, not of the
+ * output: every output renders scenes with flipY = true, and only the
+ * composite pass and screenshot readback compensate per-output present-time
+ * differences (see Output::renderVFlip).
  */
 [[nodiscard]] inline glm::mat4 buildPerspectiveProjection (
     const float fovDegrees, const float aspect, const float nearz, const float farz, const bool flipY,

@@ -191,10 +191,10 @@ void CModel::setupSections () {
 
     for (const auto& section : this->m_model.file->sections) {
 	const MeshVertexLayout layout = meshVertexLayout (section.attrMask);
-	// When the output presents with a vertical flip, the perspective camera
-	// also mirrors Y, which reverses triangle winding on screen. Reverse the
-	// index order in that case so front faces stay front with backface
-	// culling; X11 (no present-time flip) keeps the authored winding.
+	// The Y-flipped perspective camera (uniform FBO convention on every
+	// output, see CScene) mirrors Y, which reverses triangle winding on
+	// screen. Reverse the index order in that case so front faces stay front
+	// with backface culling.
 	std::vector<uint32_t> indices = section.indices;
 
 	if (this->getScene ().getCamera ().isYFlipped ()) {

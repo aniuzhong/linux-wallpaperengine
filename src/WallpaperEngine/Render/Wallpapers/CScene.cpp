@@ -90,9 +90,12 @@ CScene::CScene (
     // window to the render target's aspect ratio so the scene renders directly at screen
     // resolution — the same world region ends up visible, matching Wallpaper Engine semantics
     if (isPerspective) {
-	// 3D scenes render through a perspective camera; the output's present-time
-	// vertical flip decides whether the projection needs to be mirrored.
-	this->m_camera->setPerspectiveProjection (width, height, this->getContext ().getOutput ().renderVFlip ());
+	// 3D scenes render through a perspective camera. The composite pass samples
+	// the scene FBO with the same UV convention as video textures, so the
+	// perspective projection must be mirrored vertically even on X11 (whose
+	// XImage/root-pixmap output has no present-time flip). Wayland and GLFW
+	// already use a flipped projection, so this is true for every output.
+	this->m_camera->setPerspectiveProjection (width, height, true);
     } else {
 	float windowWidth = width;
 	float windowHeight = height;
