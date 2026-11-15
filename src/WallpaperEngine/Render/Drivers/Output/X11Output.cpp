@@ -6,7 +6,31 @@
 #include <X11/Xlib.h>
 #include <X11/extensions/Xrandr.h>
 
+#include <cstdlib>
+#include <fcntl.h>
+#include <string>
+#include <unistd.h>
+
 using namespace WallpaperEngine::Render::Drivers::Output;
+
+/**
+ * Signals the wrapper that the first frame has actually been submitted to X11.
+ * The path is fixed (per XDG runtime dir) so the wrapper and engine do not need
+ * to exchange another environment variable. The wrapper removes the file before
+ * starting the engine and after the engine exits.
+ */
+static void signalFirstFrame () {
+    const char* runtimeDir = getenv ("XDG_RUNTIME_DIR");
+    if (runtimeDir == nullptr || *runtimeDir == '\0') {
+	runtimeDir = "/tmp";
+    }
+
+    const std::string path = std::string (runtimeDir) + "/wallpaperengine.ready";
+    const int fd = open (path.c_str (), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0600);
+    if (fd >= 0) {
+	close (fd);
+    }
+}
 
 void CustomXIOErrorExitHandler (Display* dsp, void* userdata) {
     const auto context = static_cast<X11Output*> (userdata);
@@ -243,4 +267,12 @@ void X11Output::updateRender () const {
 
     XClearWindow (this->m_display, this->m_root);
     XFlush (this->m_display);
+
+    // The wrapper keeps the native desktop opaque until this file appears, so
+    // the transparent desktop never exposes the previous engine's last frame.
+    static bool firstFrameSignaled = false;
+    if (!firstFrameSignaled) {
+	signalFirstFrame ();
+	firstFrameSignaled = true;
+    }
 }
