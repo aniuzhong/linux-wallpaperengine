@@ -8,6 +8,7 @@
 #include "WallpaperEngine/Logging/Log.h"
 #include "WallpaperEngine/Render/Drivers/VideoFactories.h"
 #include "WallpaperEngine/Render/RenderContext.h"
+#include "WallpaperEngine/Render/Utils/GLUtils.h"
 
 #include "WallpaperEngine/Data/Dumpers/StringPrinter.h"
 #include "WallpaperEngine/Data/Parsers/ProjectParser.h"
@@ -601,6 +602,9 @@ void WallpaperApplication::takeScreenshot (const std::filesystem::path& filename
 	const auto& wallpaper = wallpaperIt->second;
 	const int vpWidth = viewport->viewport.z - viewport->viewport.x;
 	const int vpHeight = viewport->viewport.w - viewport->viewport.y;
+
+	// discard errors left by the scene render so the post-readback check stays accurate
+	WallpaperEngine::Render::Utils::drainGLErrors ("before screenshot readback");
 
 	// bind the wallpaper's FBO to read from it directly
 	// this is more reliable than the default framebuffer on some drivers (NVIDIA/Wayland)

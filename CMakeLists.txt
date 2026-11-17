@@ -436,6 +436,8 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Render/Helpers/ContextAware.cpp
     src/WallpaperEngine/Render/Helpers/ContextAware.h
 
+    src/WallpaperEngine/Render/Utils/GLUtils.h
+
     src/WallpaperEngine/Render/Drivers/VideoFactories.cpp
     src/WallpaperEngine/Render/Drivers/VideoFactories.h
 
