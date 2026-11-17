@@ -1,5 +1,7 @@
 #include "CText.h"
 
+#include <algorithm>
+#include <cstddef>
 #include <filesystem>
 #include <vector>
 
@@ -14,16 +16,16 @@
 #include "WallpaperEngine/Data/Model/UserSetting.h"
 #include "WallpaperEngine/Logging/Log.h"
 #include "WallpaperEngine/Render/Camera.h"
+#include "WallpaperEngine/Render/Utils/TextDecoder.h"
+#include "WallpaperEngine/Render/Utils/TextLayout.h"
 #include "WallpaperEngine/Render/Wallpapers/CScene.h"
 #include "WallpaperEngine/Scripting/ScriptEngine.h"
 
 using namespace WallpaperEngine::Render::Objects;
+using namespace WallpaperEngine::Render::Utils;
 
 namespace {
-// TODO: Phase 2 – load font from wallpaper's materials/fonts/ using AssetLocator
-// Phase 1 uses a system font instead of the font shipped by the wallpaper.
-// Wallpaper Engine bundles .ttf files in `materials/fonts/`; wiring those in
-// is deferred to Phase 2 along with dynamic/scripted text.
+// System-font candidates used when the wallpaper does not ship a usable font.
 const std::vector<std::string> kFontCandidates = {
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/TTF/DejaVuSans.ttf",
@@ -82,7 +84,6 @@ CText::CText (Wallpapers::CScene& scene, const Text& text) :
     this->registerProperty ("visible", *text.visible->value);
     this->registerProperty ("pointSize", *text.pointSize->value);
     this->registerProperty ("text", *text.text->value);
-    this->registerProperty ("pointSize", *text.pointSize->value);
 }
 
 CText::~CText () {
@@ -127,8 +128,12 @@ void CText::setup () {
 	return;
     }
 
-    m_lastPixelSize = computeEffectivePixelSize ();
-    FT_Set_Pixel_Sizes (m_ftFace, 0, static_cast<FT_UInt> (m_lastPixelSize));
+    const unsigned int pixelSize = computeEffectivePixelSize ();
+    if (FT_Set_Pixel_Sizes (m_ftFace, 0, static_cast<FT_UInt> (pixelSize)) != 0) {
+	sLog.error ("CText: FT_Set_Pixel_Sizes failed for object ", m_text.name);
+	return;
+    }
+    m_lastPixelSize = pixelSize;
 
     buildShader ();
     // Scripted text may have an empty placeholder; use a single space so the
@@ -183,21 +188,20 @@ bool CText::loadEmbeddedFont () {
 }
 
 bool CText::loadSystemFont () {
-    std::string fontPath;
-    for (const auto& candidate : kFontCandidates) {
-	if (std::filesystem::exists (candidate)) {
-	    fontPath = candidate;
-	    break;
-	}
-    }
-    if (fontPath.empty ()) {
+    const auto candidate = std::ranges::find_if (kFontCandidates, [] (const std::string& path) {
+	return std::filesystem::exists (path);
+    });
+
+    if (candidate == kFontCandidates.end ()) {
 	sLog.error ("CText: no usable system font found");
 	return false;
     }
-    if (FT_New_Face (m_ftLibrary, fontPath.c_str (), 0, &m_ftFace) != 0) {
-	sLog.error ("CText: FT_New_Face failed for ", fontPath);
+
+    if (FT_New_Face (m_ftLibrary, candidate->c_str (), 0, &m_ftFace) != 0) {
+	sLog.error ("CText: FT_New_Face failed for ", *candidate);
 	return false;
     }
+
     return true;
 }
 
@@ -229,54 +233,91 @@ void CText::initScriptLayer () {
 }
 
 void CText::rebuildTextureFrom (const std::string& text) {
-    // Two-pass rasterization: first measure the bounding box, then rasterize
-    // every glyph into a single grayscale bitmap. Phase 1 renders one line —
-    // multi-line wrapping, alignment, and padding come with Phase 2.
+    // Lay out before rasterizing; TextLayout owns line metrics and alignment so
+    // dynamic text regenerates into the same box.
     //
     // Safe to call repeatedly: GL handles (texture, VAO, VBO) are reused when
     // already allocated, so dynamic/scripted text can regenerate the glyph
     // bitmap every time the rendered string changes without leaking.
-    FT_GlyphSlot slot = m_ftFace->glyph;
-
-    int penX = 0;
-    int maxAscent = 0;
-    int maxDescent = 0;
-
-    for (unsigned char c : text) {
-	if (FT_Load_Char (m_ftFace, static_cast<FT_ULong> (c), FT_LOAD_RENDER) != 0) {
-	    continue;
-	}
-	penX += slot->advance.x >> 6;
-	maxAscent = std::max (maxAscent, slot->bitmap_top);
-	maxDescent = std::max (maxDescent, static_cast<int> (slot->bitmap.rows) - slot->bitmap_top);
+    if (m_ftFace == nullptr || m_ftFace->size == nullptr) {
+	sLog.error ("CText: font size is not initialized for object ", m_text.name);
+	return;
     }
 
-    const int width = std::max (1, penX);
-    const int height = std::max (1, maxAscent + maxDescent);
-    std::vector<uint8_t> pixels (static_cast<size_t> (width) * height, 0);
+    const FontMetrics fontMetrics {
+	.ascent = static_cast<int> (m_ftFace->size->metrics.ascender >> 6),
+	.descent = static_cast<int> (-(m_ftFace->size->metrics.descender >> 6)),
+	.lineHeight = static_cast<int> (m_ftFace->size->metrics.height >> 6),
+    };
 
-    penX = 0;
-    for (unsigned char c : text) {
-	if (FT_Load_Char (m_ftFace, static_cast<FT_ULong> (c), FT_LOAD_RENDER) != 0) {
-	    continue;
+    const auto measureGlyph = [this] (const char32_t codepoint) -> GlyphMetrics {
+	if (FT_Load_Char (m_ftFace, static_cast<FT_ULong> (codepoint), FT_LOAD_DEFAULT) != 0) {
+	    return {};
 	}
 
-	const auto& bmp = slot->bitmap;
-	const int originX = penX + slot->bitmap_left;
-	const int originY = maxAscent - slot->bitmap_top;
+	const FT_GlyphSlot glyph = m_ftFace->glyph;
+	return {
+	    .advance = static_cast<int> (glyph->advance.x >> 6),
+	    .width = static_cast<int> (glyph->metrics.width >> 6),
+	    .height = static_cast<int> (glyph->metrics.height >> 6),
+	    .bearingX = static_cast<int> (glyph->metrics.horiBearingX >> 6),
+	    .bearingY = static_cast<int> (glyph->metrics.horiBearingY >> 6),
+	};
+    };
 
-	for (unsigned int row = 0; row < bmp.rows; ++row) {
-	    for (unsigned int col = 0; col < bmp.width; ++col) {
-		const int dstX = originX + static_cast<int> (col);
+    TextLayoutOptions layoutOptions;
+
+    if (m_text.alignment == "left") {
+	layoutOptions.alignment = TextAlignment::Left;
+    } else if (m_text.alignment == "right") {
+	layoutOptions.alignment = TextAlignment::Right;
+    }
+
+    if (m_text.verticalalign == "top") {
+	layoutOptions.verticalAlignment = TextVerticalAlignment::Top;
+    } else if (m_text.verticalalign == "bottom") {
+	layoutOptions.verticalAlignment = TextVerticalAlignment::Bottom;
+    }
+
+    const std::vector<std::u32string> lines = decodeLines (text);
+    const TextLayout layout = layoutLines (lines, fontMetrics, layoutOptions, measureGlyph);
+
+    std::vector<uint8_t> pixels (static_cast<size_t> (layout.width) * layout.height, 0);
+    FT_GlyphSlot slot = m_ftFace->glyph;
+
+    for (const auto& line : layout.lines) {
+	int penX = line.x;
+
+	for (const char32_t codepoint : line.text) {
+	    if (FT_Load_Char (m_ftFace, static_cast<FT_ULong> (codepoint), FT_LOAD_RENDER) != 0) {
+		continue;
+	    }
+
+	    const auto& bitmap = slot->bitmap;
+	    const int originX = penX + slot->bitmap_left;
+	    const int originY = line.baseline - slot->bitmap_top;
+
+	    for (unsigned int row = 0; row < bitmap.rows; ++row) {
 		const int dstY = originY + static_cast<int> (row);
-		if (dstX < 0 || dstX >= width || dstY < 0 || dstY >= height) {
+
+		if (dstY < 0 || dstY >= layout.height) {
 		    continue;
 		}
-		pixels[static_cast<size_t> (dstY) * width + dstX] = bmp.buffer[row * bmp.pitch + col];
-	    }
-	}
 
-	penX += slot->advance.x >> 6;
+		const auto* rowData = bitmap.buffer + static_cast<std::ptrdiff_t> (row) * bitmap.pitch;
+		const int srcBegin = std::max (0, -originX);
+		const int srcEnd = std::min (static_cast<int> (bitmap.width), layout.width - originX);
+
+		if (srcEnd > srcBegin) {
+		    std::copy_n (
+			rowData + srcBegin, srcEnd - srcBegin,
+			pixels.begin () + static_cast<std::ptrdiff_t> (dstY) * layout.width + originX + srcBegin
+		    );
+		}
+	    }
+
+	    penX += slot->advance.x >> 6;
+	}
     }
 
     const bool firstUpload = (m_texture == 0);
@@ -285,7 +326,7 @@ void CText::rebuildTextureFrom (const std::string& text) {
     }
     glBindTexture (GL_TEXTURE_2D, m_texture);
     glPixelStorei (GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D (GL_TEXTURE_2D, 0, GL_RED, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, pixels.data ());
+    glTexImage2D (GL_TEXTURE_2D, 0, GL_RED, layout.width, layout.height, 0, GL_RED, GL_UNSIGNED_BYTE, pixels.data ());
     if (firstUpload) {
 	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -293,8 +334,7 @@ void CText::rebuildTextureFrom (const std::string& text) {
 	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
 
-    m_textureSize = { width, height };
-    m_quadSize = { static_cast<float> (width), static_cast<float> (height) };
+    m_quadSize = { static_cast<float> (layout.width), static_cast<float> (layout.height) };
     m_lastRenderedText = text;
 
     uploadQuadVertices ();
@@ -395,8 +435,11 @@ void CText::render () {
 
     const unsigned int pixelSize = computeEffectivePixelSize ();
     if (pixelSize != m_lastPixelSize) {
+	if (FT_Set_Pixel_Sizes (m_ftFace, 0, static_cast<FT_UInt> (pixelSize)) != 0) {
+	    sLog.error ("CText: FT_Set_Pixel_Sizes failed for object ", m_text.name);
+	    return;
+	}
 	m_lastPixelSize = pixelSize;
-	FT_Set_Pixel_Sizes (m_ftFace, 0, static_cast<FT_UInt> (m_lastPixelSize));
 	rebuildTextureFrom (renderedText);
     } else if (renderedText != m_lastRenderedText) {
 	rebuildTextureFrom (renderedText);

@@ -25,17 +25,17 @@ namespace WallpaperEngine::Render::Objects {
 using namespace WallpaperEngine::Data::Model;
 
 /**
- * Phase 1 text renderer.
+ * Text renderer.
  *
- * Renders static text objects as a single FreeType-rasterized RGBA texture
- * drawn on a textured quad with its own minimal GLSL shader. Does NOT go
- * through CRenderable / materials / passes — Phase 1 does not need effects.
+ * Renders text objects as a single FreeType-rasterized single-channel (GL_RED)
+ * texture drawn on a textured quad with its own minimal GLSL shader. Does NOT
+ * go through CRenderable / materials / passes — text objects do not need
+ * effects.
  *
- * Phase 2 (scripted/dynamic text, alignment from properties, effect passes)
- * is intentionally not implemented here. When the scene provides a dynamic
- * `text: { script: "..." }` object this class captures the script source in
- * the data model but renders an empty string — the Wallpaper Engine JS
- * runtime required to evaluate it is out of scope for Phase 1.
+ * Supports UTF-8 (malformed sequences become U+FFFD), multiline text,
+ * embedded/system fonts, scripted/dynamic text and basic line alignment.
+ * Wrapping, authored-box placement/padding and per-glyph font fallback are not
+ * implemented yet.
  */
 class CText final : virtual public CObject, public Scripting::ScriptableObject {
 public:
@@ -78,7 +78,6 @@ private:
     GLint m_uColor = -1;
     GLint m_uTexture = -1;
 
-    glm::ivec2 m_textureSize = { 0, 0 };
     glm::vec2 m_quadSize = { 0.0f, 0.0f };
 
     bool m_valid = false;
