@@ -206,14 +206,12 @@ bool CText::loadSystemFont () {
 }
 
 unsigned int CText::computeEffectivePixelSize () const {
-    // WE text objects often come with scale ~0.09 that, combined with a modest
-    // pointsize, would rasterize glyphs to ~2px on screen (invisible). Rasterize
-    // at higher resolution so that after the model scale is applied in render()
-    // the on-screen size matches the intended pointsize.
-    const glm::vec3 initialScale = this->resolveTransform (this->getObject ()).scale;
-    const float avgScale = (initialScale.x + initialScale.y) * 0.5f;
-    const float compensate = (avgScale > 0.0f && avgScale < 1.0f) ? std::min (1.0f / avgScale, 32.0f) : 1.0f;
-    return std::max<unsigned int> (1u, static_cast<unsigned int> (m_text.pointSize->value->getFloat () * compensate));
+    // WE converts pointsize to a fixed pixel EM independent of the canvas:
+    // EM = pointsize * 4. The object's resolved scale then applies through the
+    // model matrix like any other object; the size box is only used for effect
+    // frames, and overflowing text is not shrunk.
+    const float emPixels = m_text.pointSize->value->getFloat () * 4.0f;
+    return std::min<unsigned int> (1024, std::max<unsigned int> (1u, static_cast<unsigned int> (emPixels)));
 }
 
 void CText::initScriptLayer () {
