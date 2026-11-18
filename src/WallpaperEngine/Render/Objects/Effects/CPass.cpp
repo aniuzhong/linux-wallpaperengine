@@ -6,6 +6,7 @@
 
 #include "WallpaperEngine/Data/Model/Effect.h"
 #include "WallpaperEngine/Data/Model/Material.h"
+#include "WallpaperEngine/Data/Model/Property.h"
 
 #include "WallpaperEngine/Render/CFBO.h"
 #include "WallpaperEngine/Render/Objects/CImage.h"
@@ -1049,6 +1050,29 @@ void CPass::setupShaderVariables () {
 	if (!this->m_uniforms.contains (cur->getName ())) {
 	    this->addUniform (cur);
 	}
+    }
+
+    // apply usershadervalues (project property name -> shader material identifier,
+    // e.g. eagleflag maps schemecolor/flagcolor1/flagcolor2 to color1/color2/color3),
+    // the uniform references the property's storage so runtime changes stay live
+    const Properties& properties = this->m_renderable.getScene ().getScene ().project.properties;
+
+    for (const auto& [propertyName, materialName] : this->m_pass.userShaderValues) {
+	const auto propertyIt = properties.find (propertyName);
+
+	if (propertyIt == properties.end ()) {
+	    sLog.error ("usershadervalues references an unknown property: ", propertyName);
+	    continue;
+	}
+
+	const auto [vertex, fragment] = this->m_shader->findParameter (materialName);
+
+	if (vertex == nullptr && fragment == nullptr) {
+	    continue;
+	}
+
+	ShaderVariable* var = vertex == nullptr ? fragment : vertex;
+	this->addUniform (var, propertyIt->second.get ());
     }
 
     // apply material pass constants (e.g. constantshadervalues from the material JSON)
