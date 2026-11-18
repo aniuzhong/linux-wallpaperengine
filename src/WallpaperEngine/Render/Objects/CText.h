@@ -29,8 +29,9 @@ using namespace WallpaperEngine::Data::Model;
  *
  * Renders text objects as a single FreeType-rasterized single-channel (GL_RED)
  * texture drawn on a textured quad with its own minimal GLSL shader. Does NOT
- * go through CRenderable / materials / passes — text objects do not need
- * effects.
+ * go through CRenderable / materials / passes. Effects declared on the text
+ * itself are not rendered yet; only inherited tint from composition-layer
+ * ancestors is approximated in render().
  *
  * Supports UTF-8 (malformed sequences become U+FFFD), multiline text,
  * embedded/system fonts, scripted/dynamic text and basic line alignment.

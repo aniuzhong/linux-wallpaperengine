@@ -57,6 +57,71 @@ void main() {
 }
 )glsl";
 
+bool isTintEffect (const ImageEffect& effect) {
+    if (effect.effect == nullptr) {
+	return false;
+    }
+
+    return std::ranges::any_of (effect.effect->passes, [] (const auto& pass) {
+	return pass->material.has_value ()
+	    && std::ranges::any_of (pass->material.value ()->passes, [] (const auto& materialPass) {
+		   return materialPass->shader.find ("tint") != std::string::npos;
+	       });
+    });
+}
+
+bool isCompositionLayer (const Object& object) {
+    if (!object.is<Image> ()) {
+	return false;
+    }
+
+    const auto* image = object.as<Image> ();
+    return image->model != nullptr && image->model->filename == "models/util/composelayer.json";
+}
+
+// WE only composites child objects into an effect chain for composition layers
+// (https://docs.wallpaperengine.io/en/scene/effects/introduction.html). Ordinary
+// parent effects stay local to their own layer, so only composition layer
+// ancestors are considered here. The scene-level `disablepropagation` flag is
+// unrelated: it controls click propagation, not effects
+// (https://docs.wallpaperengine.io/en/scene/userproperties/usershortcut.html).
+//
+// This is still an approximation of the built-in tint effect: it treats the
+// tint color as a multiply, which matches WE for white text with alpha 1 and the
+// default BLENDMODE=30. Tint masks and other blend modes are not reproduced.
+glm::vec3 collectCompositeTint (const Wallpapers::CScene& scene, const Object& object) {
+    glm::vec3 tint (1.0f);
+    const Object* current = &object;
+
+    for (int depth = 0; depth < 32 && current->parent.has_value (); ++depth) {
+	const auto* parentRenderable = scene.getObject (*current->parent);
+	if (parentRenderable == nullptr) {
+	    break;
+	}
+
+	current = &parentRenderable->getObject ();
+	if (!isCompositionLayer (*current)) {
+	    continue;
+	}
+
+	for (const auto& effect : current->as<Image> ()->effects) {
+	    if (!effect->visible->value->getBool () || !isTintEffect (*effect)) {
+		continue;
+	    }
+
+	    for (const auto& passOverride : effect->passOverrides) {
+		const auto color = passOverride->constants.find ("color");
+		if (color != passOverride->constants.end () && color->second != nullptr
+		    && color->second->value != nullptr) {
+		    tint *= color->second->value->getVec3 ();
+		}
+	    }
+	}
+    }
+
+    return tint;
+}
+
 GLuint compileShader (GLenum type, const char* source) {
     GLuint shader = glCreateShader (type);
     glShaderSource (shader, 1, &source, nullptr);
@@ -445,6 +510,7 @@ void CText::render () {
 
     const glm::vec4 color = m_text.color->value->getVec4 ();
     const float alpha = m_text.alpha->value->getFloat ();
+    const glm::vec3 propagatedTint = collectCompositeTint (this->getScene (), this->getObject ());
     const auto transform = this->resolveTransform (this->getObject ());
     const glm::vec3& scale = transform.scale;
     const glm::vec3& origin = transform.origin;
@@ -471,7 +537,9 @@ void CText::render () {
 
     glUseProgram (m_program);
     glUniformMatrix4fv (m_uMVP, 1, GL_FALSE, glm::value_ptr (mvp));
-    glUniform4f (m_uColor, color.r, color.g, color.b, color.a * alpha);
+    glUniform4f (
+	m_uColor, color.r * propagatedTint.r, color.g * propagatedTint.g, color.b * propagatedTint.b, color.a * alpha
+    );
 
     glActiveTexture (GL_TEXTURE0);
     glBindTexture (GL_TEXTURE_2D, m_texture);
