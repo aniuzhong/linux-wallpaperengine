@@ -451,12 +451,12 @@ void CText::render () {
     const glm::vec3& scale = transform.scale;
     const glm::vec3& origin = transform.origin;
 
-    // WE uses a Y-down scene space (origin at top-left, y increases downward), the
-    // same convention resolveTransform composes parent chains in (matching CImage).
-    // The quad is drawn with an y-up GL translation, so the scene y is mirrored
-    // around the vertical center here.
-    const float scene_w = getScene ().getCamera ().getWidth ();
-    const float scene_h = getScene ().getCamera ().getHeight ();
+    // Scene space is Y-down with top-left origin and uses the design/projection
+    // resolution, not the camera's cropped window (same reference as
+    // resolveTransform/CImage). GL is Y-up and centered, so shift X by
+    // -scene_w/2 and mirror Y about y = scene_h/2.
+    const auto scene_w = static_cast<float> (getScene ().getWidth ());
+    const auto scene_h = static_cast<float> (getScene ().getHeight ());
     const glm::vec3 gl_origin = {
 	origin.x - scene_w * 0.5f,
 	scene_h * 0.5f - origin.y,
