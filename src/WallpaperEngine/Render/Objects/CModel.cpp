@@ -95,7 +95,23 @@ bool CModel::samplesReflection () const {
     return false;
 }
 
-float CModel::getWorldOriginY () const { return this->resolveTransform (this->m_model).origin.y; }
+bool CModel::needsDepthSort () const {
+    for (const auto& section : this->m_model.file->sections) {
+	const Material& material = sectionMaterial (section, this->m_model.skin);
+
+	for (const auto& pass : material.passes) {
+	    if (pass->blending == BlendingMode_Translucent) {
+		return true;
+	    }
+	}
+    }
+
+    return false;
+}
+
+glm::vec3 CModel::getWorldOrigin () const { return this->resolveTransform (this->m_model).origin; }
+
+float CModel::getWorldOriginY () const { return this->getWorldOrigin ().y; }
 
 const float& CModel::getBrightness () const {
     static const float brightness = 1.0f;

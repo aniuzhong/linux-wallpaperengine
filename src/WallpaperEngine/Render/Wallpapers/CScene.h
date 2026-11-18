@@ -80,6 +80,12 @@ private:
     Render::CObject* createObject (const Object& object);
     Render::CObject* dispatchObjectType (const Object& object);
     void addObjectToRenderOrder (const Object& object);
+    /**
+     * Orders translucent 3D model objects back-to-front along the camera's
+     * view direction. Opaque models and screen-space layers keep the authored
+     * scene.json order; opaque depth testing handles their visibility.
+     */
+    void sortModelsByDepth ();
     /** Refreshes the shader light arrays from the scene's light objects */
     void updateLights ();
     /** Collects the reflected models and the mirror plane once the scene is set up */

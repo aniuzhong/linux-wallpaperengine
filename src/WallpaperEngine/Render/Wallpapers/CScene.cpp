@@ -12,6 +12,8 @@
 #include "WallpaperEngine/Data/Model/Wallpaper.h"
 #include "WallpaperEngine/Data/Parsers/ObjectParser.h"
 
+#include <algorithm>
+#include <functional>
 #include <ranges>
 
 extern float g_Time;
@@ -375,6 +377,70 @@ void CScene::addObjectToRenderOrder (const Object& object) {
     }
 }
 
+void CScene::sortModelsByDepth () {
+    // 2d scenes use the array order as their draw order; only perspective
+    // scenes have real 3d depth to sort against
+    if (this->m_camera == nullptr || this->m_camera->isOrthogonal ()) {
+	return;
+    }
+
+    const glm::vec3 eye = this->m_camera->getEye ();
+    const glm::vec3 view = this->m_camera->getCenter () - eye;
+
+    if (glm::dot (view, view) <= 0.0f) {
+	return;
+    }
+
+    const glm::vec3 forward = glm::normalize (view);
+
+    struct ModelDepth {
+	Objects::CModel* model;
+	float depth;
+    };
+
+    std::vector<ModelDepth> models = {};
+    models.reserve (this->m_objectsByRenderOrder.size ());
+
+    for (CObject* object : this->m_objectsByRenderOrder) {
+	if (!object->is<Objects::CModel> ()) {
+	    continue;
+	}
+
+	auto* model = object->as<Objects::CModel> ();
+
+	// Only alpha-blended models need back-to-front ordering. Opaque models
+	// rely on depth testing, and additive passes are order-independent.
+	// Background models often disable depth writes while using normal
+	// blending; sorting those by origin can put them after foreground
+	// geometry and paint over it (dna_fragment does exactly that).
+	if (!model->needsDepthSort ()) {
+	    continue;
+	}
+
+	// camera-space depth: distance along the view direction, not the
+	// euclidean distance, so objects outside the frustum sort consistently
+	models.push_back ({ model, glm::dot (model->getWorldOrigin () - eye, forward) });
+    }
+
+    if (models.size () < 2) {
+	return;
+    }
+
+    // back-to-front: the farthest alpha-blended model first so overlapping
+    // surfaces blend over the geometry behind them. Opaque, additive and
+    // screen-space layers keep their authored slots.
+    std::ranges::stable_sort (models, std::greater {}, &ModelDepth::depth);
+
+    auto nextModel = models.begin ();
+    for (CObject*& object : this->m_objectsByRenderOrder) {
+	if (!object->is<Objects::CModel> () || !object->as<Objects::CModel> ()->needsDepthSort ()) {
+	    continue;
+	}
+
+	object = (nextModel++)->model;
+    }
+}
+
 void CScene::updateLights () {
     this->m_lightPositions.fill (glm::vec3 (0.0f));
     this->m_lightColorsRadius.fill (glm::vec4 (0.0f));
@@ -432,6 +498,10 @@ void CScene::renderFrame (const glm::ivec4& viewport) {
 
     // advance the camera path animation before drawing anything
     this->m_camera->tick ();
+
+    // depth order the 3d objects for the current camera pose; translucent
+    // surfaces only composite correctly when they are drawn back-to-front
+    this->sortModelsByDepth ();
 
     // refresh the shader light arrays so materials pick up current light state
     this->updateLights ();

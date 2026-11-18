@@ -168,6 +168,10 @@ void CPass::setupRenderFramebuffer () const {
 	    break;
     }
 
+    // Respect the material's depthwrite. Transparent models are sorted
+    // back-to-front by CScene; if intersecting transparent surfaces need more,
+    // add a section/pass-level transparent queue instead of disabling depth
+    // writes globally.
     switch (this->m_pass.depthwrite) {
 	case DepthwriteMode_Enabled:
 	    glDepthMask (true);
