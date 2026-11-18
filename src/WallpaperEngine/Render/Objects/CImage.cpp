@@ -145,16 +145,17 @@ CImage::CImage (Wallpapers::CScene& scene, const Image& image) :
 	);
     }
 
-    // If the wallpaper doesn't specify a size, fall back to the texture or model dimensions
-    if ((size.x == 0.0f || size.y == 0.0f) && this->m_texture != nullptr) {
-	size.x = static_cast<float> (this->m_texture->getRealWidth ());
-	size.y = static_cast<float> (this->m_texture->getRealHeight ());
-    } else if (
-	(size.x == 0.0f || size.y == 0.0f) && this->getImage ().model->width.has_value ()
-	&& this->getImage ().model->height.has_value ()
-    ) {
+    // If the wallpaper doesn't specify a size, fall back to the model's declared dimensions
+    // before the detected texture: the first material pass texture can be much smaller than
+    // the image itself (e.g. deep_space's Background pass lists a 480x270 flow mask first)
+    // while the model json declares the quad extent the wallpaper was authored with
+    if ((size.x == 0.0f || size.y == 0.0f) && this->getImage ().model->width.has_value ()
+	&& this->getImage ().model->height.has_value ()) {
 	size.x = static_cast<float> (this->getImage ().model->width.value ());
 	size.y = static_cast<float> (this->getImage ().model->height.value ());
+    } else if ((size.x == 0.0f || size.y == 0.0f) && this->m_texture != nullptr) {
+	size.x = static_cast<float> (this->m_texture->getRealWidth ());
+	size.y = static_cast<float> (this->m_texture->getRealHeight ());
     }
 
     // fullscreen layers should use the whole projection's size
