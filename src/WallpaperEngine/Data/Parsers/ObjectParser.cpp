@@ -175,8 +175,9 @@ ObjectParser::parseModelObject (const JSON& it, const Project& project, ObjectDa
     }
 
     // model rendering happens in 3d space: passes that don't specify depth
-    // behavior default to testing and writing, explicit material values are
-    // kept as written (e.g. bgfade's depthwrite disabled)
+    // behavior default to testing and writing for opaque materials, while
+    // blended passes default to testing without writing; explicit material
+    // values are kept as written (e.g. bgfade's depthwrite disabled)
     for (const auto& section : file->sections) {
 	for (auto& material : section.materials) {
 	    for (auto& pass : material->passes) {
@@ -185,7 +186,8 @@ ObjectParser::parseModelObject (const JSON& it, const Project& project, ObjectDa
 		}
 
 		if (pass->depthwrite == DepthwriteMode_Unknown) {
-		    pass->depthwrite = DepthwriteMode_Enabled;
+		    pass->depthwrite
+			= pass->blending == BlendingMode_Normal ? DepthwriteMode_Enabled : DepthwriteMode_Disabled;
 		}
 
 		// WE culls backfaces on model materials unless the pass

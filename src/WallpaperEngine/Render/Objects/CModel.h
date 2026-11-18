@@ -34,6 +34,8 @@ public:
 
     /** Whether any material pass used by this model samples the reflection target */
     [[nodiscard]] bool samplesReflection () const;
+    /** World-space origin after folding the parent chain, used for depth sorting */
+    [[nodiscard]] glm::vec3 getWorldOrigin () const;
     /** World-space Y of the model origin, where the mirror plane sits */
     [[nodiscard]] float getWorldOriginY () const;
 

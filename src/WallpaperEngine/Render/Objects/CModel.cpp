@@ -95,7 +95,9 @@ bool CModel::samplesReflection () const {
     return false;
 }
 
-float CModel::getWorldOriginY () const { return this->resolveTransform (this->m_model).origin.y; }
+glm::vec3 CModel::getWorldOrigin () const { return this->resolveTransform (this->m_model).origin; }
+
+float CModel::getWorldOriginY () const { return this->getWorldOrigin ().y; }
 
 const float& CModel::getBrightness () const {
     static const float brightness = 1.0f;

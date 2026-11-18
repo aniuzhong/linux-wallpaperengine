@@ -80,6 +80,12 @@ private:
     Render::CObject* createObject (const Object& object);
     Render::CObject* dispatchObjectType (const Object& object);
     void addObjectToRenderOrder (const Object& object);
+    /**
+     * Orders the 3D model objects back-to-front along the camera's view
+     * direction. Wallpaper Engine uses depth, not the scene.json array order,
+     * to draw perspective scenes; screen-space layers keep the authored order.
+     */
+    void sortModelsByDepth ();
     /** Refreshes the shader light arrays from the scene's light objects */
     void updateLights ();
     /** Collects the reflected models and the mirror plane once the scene is set up */
