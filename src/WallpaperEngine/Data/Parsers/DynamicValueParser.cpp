@@ -2,8 +2,10 @@
 
 #include "UserSettingParser.h"
 #include "WallpaperEngine/Data/Model/DynamicValue.h"
+#include "WallpaperEngine/Data/Utils/StringParsing.h"
 
 using namespace WallpaperEngine::Data::Parsers;
+using WallpaperEngine::Data::Utils::parseFloat;
 
 DynamicValueUniquePtr DynamicValueParser::parse (const json& data, const Properties& properties, bool expectColor) {
     auto value = std::make_unique<DynamicValue> ();
@@ -32,16 +34,9 @@ DynamicValueUniquePtr DynamicValueParser::parse (const json& data, const Propert
 
 	    if (size == 1) {
 		// scalar? text value?
-		std::size_t parsed = 0;
-		try {
-		    float f = std::stof (str, &parsed);
-
-		    if (parsed == str.size ()) {
-			value->update (f, DynamicValue::UpdateSource::Initialization);
-		    } else {
-			value->update (str, DynamicValue::UpdateSource::Initialization);
-		    }
-		} catch (const std::exception&) {
+		if (const auto parsed = parseFloat (str); parsed.has_value ()) {
+		    value->update (*parsed, DynamicValue::UpdateSource::Initialization);
+		} else {
 		    value->update (str, DynamicValue::UpdateSource::Initialization);
 		}
 	    } else if (size == 2) {

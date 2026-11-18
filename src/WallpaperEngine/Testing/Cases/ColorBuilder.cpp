@@ -1,3 +1,4 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "WallpaperEngine/Data/Builders/ColorBuilder.h"
@@ -29,4 +30,10 @@ TEST_CASE ("3774904326 (Lost Valley 2 | northway.) particle colors: byte-encoded
     // vec4 byte-encoded alpha scales with rgb; vec3 keeps the caller's normalized alpha
     CHECK (ColorBuilder::parse ("197 214 255 128") == Color (197.0f / 255.0f, 214.0f / 255.0f, 1.0f, 128.0f / 255.0f));
     CHECK (ColorBuilder::parse ("197 214 255", 0.5f) == Color (197.0f / 255.0f, 214.0f / 255.0f, 1.0f, 0.5f));
+}
+
+TEST_CASE ("Hex colors with alpha use the full unsigned 32-bit range") {
+    CHECK (ColorBuilder::parse ("#ffffffff") == Color (1, 1, 1, 1));
+    CHECK (ColorBuilder::parse ("#fff") == Color (1, 1, 1, 1));
+    CHECK (ColorBuilder::parse ("#ffffff7f").a == Catch::Approx (0x7f / 255.0f));
 }

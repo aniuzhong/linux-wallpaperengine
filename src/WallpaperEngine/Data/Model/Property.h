@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../Builders/ColorBuilder.h"
+#include "../Utils/StringParsing.h"
 #include "../Utils/TypeCaster.h"
 #include "DynamicValue.h"
 #include "WallpaperEngine/Logging/Log.h"
@@ -45,7 +46,16 @@ public:
     }
 
     using Property::update;
-    void update (const std::string& value, UpdateSource source) override { this->update (std::stof (value), source); }
+    void update (const std::string& value, UpdateSource source) override {
+	const auto parsed = parseFloat (value);
+
+	if (!parsed.has_value ()) {
+	    sLog.error ("Invalid slider value for '", this->name, "': ", value);
+	    return;
+	}
+
+	this->update (*parsed, source);
+    }
 
     [[nodiscard]] std::string dump () const override {
 	std::stringstream ss;
@@ -69,7 +79,7 @@ public:
 
     using Property::update;
     void update (const std::string& value, UpdateSource source) override {
-	this->update (value == "true" || value == "1", source);
+	this->update (parseLegacyBoolean (value), source);
     }
 
     [[nodiscard]] std::string dump () const override {

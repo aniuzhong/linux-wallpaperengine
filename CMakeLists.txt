@@ -546,6 +546,7 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Data/Utils/BinaryReader.h
     src/WallpaperEngine/Data/Utils/MemoryStream.h
     src/WallpaperEngine/Data/Utils/SFINAE.h
+    src/WallpaperEngine/Data/Utils/StringParsing.h
     src/WallpaperEngine/Data/Parsers/DynamicValueParser.h
     src/WallpaperEngine/Data/Parsers/DynamicValueParser.cpp
     src/WallpaperEngine/Data/Parsers/EffectParser.cpp
@@ -643,7 +644,8 @@ if(BUILD_TESTING)
         src/WallpaperEngine/Testing/Cases/MeshParser.cpp
         src/WallpaperEngine/Testing/Cases/ObjectParser.cpp
         src/WallpaperEngine/Testing/Cases/ShaderUnit.cpp
-        src/WallpaperEngine/Testing/Cases/CameraPath.cpp)
+        src/WallpaperEngine/Testing/Cases/CameraPath.cpp
+        src/WallpaperEngine/Testing/Cases/StringParsing.cpp)
 endif()
 
 add_library(

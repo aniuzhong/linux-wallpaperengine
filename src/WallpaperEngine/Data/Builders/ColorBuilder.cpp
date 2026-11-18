@@ -1,7 +1,9 @@
 #include "ColorBuilder.h"
 #include "VectorBuilder.h"
+#include "WallpaperEngine/Data/Utils/StringParsing.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <glm/vec3.hpp>
 #include <version>
 
@@ -11,6 +13,8 @@
 #include <cstdio>
 #include <sstream>
 #endif
+
+using WallpaperEngine::Data::Utils::parseUint32;
 
 const WallpaperEngine::Data::Model::Color WallpaperEngine::Data::Builders::ColorBuilder::White
     = WallpaperEngine::Data::Model::Color (1.0f, 1.0f, 1.0f, 1.0f);
@@ -30,6 +34,15 @@ WallpaperEngine::Data::Builders::ColorBuilder::parse (const std::string& value, 
     // hex colors should be converted to int colors
     if (copy.find ('#') == 0) {
 	auto number = copy.substr (1);
+	const auto requireHexValue = [&value] (const std::string& hex) -> std::uint32_t {
+	    const auto parsed = parseUint32 (hex, 16);
+
+	    if (!parsed.has_value ()) {
+		sLog.exception ("Invalid CSS color notation for ", value);
+	    }
+
+	    return *parsed;
+	};
 
 	// expand short css notation into the right one
 	// support for css notation
@@ -62,7 +75,7 @@ WallpaperEngine::Data::Builders::ColorBuilder::parse (const std::string& value, 
 	} else if (number.size () == 6) {
 	    // "#rrggbb" is rgb-only: bytes sit at bits 16..0 and alpha comes from
 	    // the caller, the shared extraction below assumes an 8-digit layout
-	    const auto color = std::stoi (number, nullptr, 16);
+	    const auto color = requireHexValue (number);
 
 	    return WallpaperEngine::Data::Model::Color { static_cast<float> (color >> 16 & 0xFF) / 255.0f,
 							 static_cast<float> (color >> 8 & 0xFF) / 255.0f,
@@ -72,7 +85,7 @@ WallpaperEngine::Data::Builders::ColorBuilder::parse (const std::string& value, 
 	}
 
 	// parse hex color
-	const auto color = std::stoi (number, nullptr, 16);
+	const auto color = requireHexValue (number);
 
 	return WallpaperEngine::Data::Model::Color (
 	    (color >> 24 & 0xFF) / 255.0f, (color >> 16 & 0xFF) / 255.0f, (color >> 8 & 0xFF) / 255.0f,

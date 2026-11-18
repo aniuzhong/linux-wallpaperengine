@@ -1,8 +1,43 @@
 #include "PropertyParser.h"
 #include "../Model/Property.h"
+#include "WallpaperEngine/Data/Utils/StringParsing.h"
+
+#include <optional>
 
 using namespace WallpaperEngine::Data::Parsers;
 using namespace WallpaperEngine::Data::Model;
+using WallpaperEngine::Data::Utils::parseFloat;
+using WallpaperEngine::Data::Utils::parseLegacyBoolean;
+
+namespace {
+bool toPropertyBoolean (const JSON& value) {
+    if (value.is_boolean ()) {
+	return value.get<bool> ();
+    }
+
+    if (value.is_number ()) {
+	return value.get<double> () != 0.0;
+    }
+
+    if (value.is_string ()) {
+	return parseLegacyBoolean (value.get_ref<const std::string&> ());
+    }
+
+    return false;
+}
+
+std::optional<float> toPropertyFloat (const JSON& value) {
+    if (value.is_number ()) {
+	return value.get<float> ();
+    }
+
+    if (value.is_string ()) {
+	return parseFloat (value.get_ref<const std::string&> ());
+    }
+
+    return std::nullopt;
+}
+} // namespace
 
 PropertySharedPtr PropertyParser::parse (const JSON& it, const std::string& name) {
     // type might not be included, in which case means the same as a group
@@ -90,27 +125,41 @@ PropertySharedPtr PropertyParser::parseColor (const JSON& it, const std::string&
 }
 
 PropertySharedPtr PropertyParser::parseBoolean (const JSON& it, const std::string& name) {
+    const auto value = it.optional ("value");
+
     return std::make_shared<PropertyBoolean> (
 	PropertyData {
 	    .name = name,
 	    .text = it.optional<std::string> ("text", ""),
 	},
-	it.optional ("value", false)
+	value.has_value () ? toPropertyBoolean (*value) : false
     );
 }
 
 PropertySharedPtr PropertyParser::parseSlider (const JSON& it, const std::string& name) {
+    const auto readNumber = [&name] (const JSON& value, const char* field) -> float {
+	if (const auto parsed = toPropertyFloat (value); parsed.has_value ()) {
+	    return *parsed;
+	}
+
+	sLog.error ("Property ", name, ".", field, " is not a valid number: ", value.dump ());
+	return 0.0f;
+    };
+    const auto readOptionalNumber = [&readNumber] (const std::optional<JSON>& value, const char* field) -> float {
+	return value.has_value () ? readNumber (*value, field) : 0.0f;
+    };
+
     return std::make_shared<PropertySlider> (
 	PropertyData {
 	    .name = name,
 	    .text = it.optional<std::string> ("text", ""),
 	},
 	SliderData {
-	    .min = it.optional ("min", 0.0f),
-	    .max = it.optional ("max", 0.0f),
-	    .step = it.optional ("step", 0.0f),
+	    .min = readOptionalNumber (it.optional ("min"), "min"),
+	    .max = readOptionalNumber (it.optional ("max"), "max"),
+	    .step = readOptionalNumber (it.optional ("step"), "step"),
 	},
-	it.require ("value", "Property must have a value")
+	readNumber (it.require ("value", "Property must have a value"), "value")
     );
 }
 
