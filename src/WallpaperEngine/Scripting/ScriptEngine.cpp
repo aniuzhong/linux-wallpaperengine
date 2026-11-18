@@ -578,8 +578,48 @@ void ScriptEngine::queueScript (const std::string& key, DynamicValue& currentVal
 	return;
     }
 
-    // load the script and store it
-    JSValue module = JS_Eval (this->m_context, source->c_str (), source->size (), key.c_str (), JS_EVAL_TYPE_MODULE);
+    // quickjs-ng's JS_Eval returns a promise for modules instead of the namespace object, so
+    // compile the module first to keep hold of its definition, evaluate it and then store the
+    // namespace (which exposes the exported functions) as the module value
+    JSValue compiled = JS_Eval (
+	this->m_context, source->c_str (), source->size (), key.c_str (),
+	JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY
+    );
+
+    if (JS_IsException (compiled)) {
+	logJSException (this->m_context, ("queueScript.eval " + key).c_str ());
+	return;
+    }
+
+    JSModuleDef* moduleDef = nullptr;
+
+    if (JS_VALUE_GET_TAG (compiled) == JS_TAG_MODULE) {
+	moduleDef = static_cast<JSModuleDef*> (JS_VALUE_GET_PTR (compiled));
+    }
+
+    // running the compiled module links and executes it, the returned promise fulfills with
+    // undefined for modules without top-level await (imports are resolved synchronously here)
+    JSValue evaluation = JS_EvalFunction (this->m_context, compiled);
+
+    if (JS_IsException (evaluation)) {
+	logJSException (this->m_context, ("queueScript.evaluate " + key).c_str ());
+	return;
+    }
+
+    JS_FreeValue (this->m_context, evaluation);
+
+    JSValue module = JS_UNDEFINED;
+
+    if (moduleDef != nullptr) {
+	module = JS_GetModuleNamespace (this->m_context, moduleDef);
+
+	if (JS_IsException (module)) {
+	    logJSException (this->m_context, ("queueScript.namespace " + key).c_str ());
+	    return;
+	}
+    } else {
+	sLog.error ("ScriptEngine: module ", key, " did not compile to a module definition");
+    }
 
     auto inserted = this->m_scriptModules.emplace (
 	key,
@@ -608,10 +648,14 @@ void ScriptEngine::queueScript (const std::string& key, DynamicValue& currentVal
     });
 
     if (JS_IsException (result)) {
+	logJSException (this->m_context, ("queueScript.update " + key).c_str ());
 	return;
     }
 
-    jsToDynamicValue (this->m_context, result, currentValue);
+    // modules without an update export evaluate to undefined, keep the parsed value as is
+    if (!JS_IsUndefined (result)) {
+	jsToDynamicValue (this->m_context, result, currentValue);
+    }
 }
 
 void ScriptEngine::tick () {
@@ -632,10 +676,14 @@ void ScriptEngine::tick () {
 	});
 
 	if (JS_IsException (result)) {
+	    logJSException (this->m_context, "tick.update");
 	    continue;
 	}
 
-	jsToDynamicValue (this->m_context, result, module.value);
+	// modules without an update export evaluate to undefined, keep the parsed value as is
+	if (!JS_IsUndefined (result)) {
+	    jsToDynamicValue (this->m_context, result, module.value);
+	}
     }
 }
 
