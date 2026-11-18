@@ -528,6 +528,11 @@ void CText::render () {
     };
 
     glm::mat4 model = glm::translate (glm::mat4 (1.0f), gl_origin);
+    // Rotate around the text's own origin by the parent-chain accumulated angle.
+    // Negated like CImage/CParticle to compensate the Y-flipped coordinate system.
+    if (transform.angle != 0.0f) {
+	model = glm::rotate (model, -transform.angle, glm::vec3 (0.0f, 0.0f, 1.0f));
+    }
     model = glm::scale (model, scale);
 
     const glm::mat4 mvp = getScene ().getCamera ().getProjection () * getScene ().getCamera ().getLookAt () * model;
