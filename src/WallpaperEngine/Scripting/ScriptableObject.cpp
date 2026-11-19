@@ -2,6 +2,7 @@
 
 #include "ScriptEngine.h"
 #include "WallpaperEngine/Data/Utils/ScopeGuard.h"
+#include "WallpaperEngine/Render/Objects/CRenderable.h"
 
 #include <ranges>
 
@@ -28,6 +29,75 @@ DynamicValue& ScriptableObject::getProperty (const std::string& name) {
 
 const std::map<std::string, ScriptableObject::PropertyEntry>& ScriptableObject::getProperties () const {
     return this->m_properties;
+}
+
+void ScriptableObject::attachRenderable (Render::Objects::CRenderable* renderable) {
+    this->m_renderable = renderable;
+
+    if (this->m_renderable == nullptr) {
+	return;
+    }
+
+    // scripts run from the base constructor, before the object is fully built; replay
+    // anything they requested through thisLayer.getTextureAnimation()
+    if (this->m_pendingAnimationRewind) {
+	this->m_renderable->stopTextureAnimation ();
+    }
+
+    if (this->m_pendingAnimationFrame.has_value ()) {
+	this->m_renderable->setTextureAnimationFrame (*this->m_pendingAnimationFrame);
+    }
+
+    if (this->m_pendingAnimationPlaying.has_value ()) {
+	if (*this->m_pendingAnimationPlaying) {
+	    this->m_renderable->playTextureAnimation ();
+	} else {
+	    this->m_renderable->pauseTextureAnimation ();
+	}
+    }
+
+    this->m_pendingAnimationFrame.reset ();
+    this->m_pendingAnimationPlaying.reset ();
+    this->m_pendingAnimationRewind = false;
+}
+
+void ScriptableObject::setTextureAnimationFrame (int frame) {
+    if (this->m_renderable != nullptr) {
+	this->m_renderable->setTextureAnimationFrame (frame);
+	return;
+    }
+
+    this->m_pendingAnimationFrame = frame;
+    this->m_pendingAnimationRewind = false;
+}
+
+void ScriptableObject::pauseTextureAnimation () {
+    if (this->m_renderable != nullptr) {
+	this->m_renderable->pauseTextureAnimation ();
+	return;
+    }
+
+    this->m_pendingAnimationPlaying = false;
+}
+
+void ScriptableObject::playTextureAnimation () {
+    if (this->m_renderable != nullptr) {
+	this->m_renderable->playTextureAnimation ();
+	return;
+    }
+
+    this->m_pendingAnimationPlaying = true;
+}
+
+void ScriptableObject::stopTextureAnimation () {
+    if (this->m_renderable != nullptr) {
+	this->m_renderable->stopTextureAnimation ();
+	return;
+    }
+
+    this->m_pendingAnimationFrame.reset ();
+    this->m_pendingAnimationPlaying = false;
+    this->m_pendingAnimationRewind = true;
 }
 
 void ScriptableObject::registerProperty (const std::string& name, DynamicValue& value) {

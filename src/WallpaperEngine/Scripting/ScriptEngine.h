@@ -151,6 +151,8 @@ private:
     JSRuntime* m_runtime = nullptr;
     JSContext* m_context = nullptr;
     JSValue m_globalThis;
+    /** Per-runtime class ID for the ITextureAnimation wrapper objects */
+    JSClassID m_textureAnimationClassId = 0;
     Render::Wallpapers::CScene& m_scene;
     std::unique_ptr<EngineObject> m_engineObject;
     std::unique_ptr<InputObject> m_inputObject;
