@@ -501,8 +501,26 @@ void CScene::renderFrame (const glm::ivec4& viewport) {
 	const glm::vec2 centeredMouse = this->getContext ().getApp ().getContext ().settings.mouse.enabled
 	    ? this->m_mousePosition - glm::vec2 (0.5f, 0.5f)
 	    : glm::vec2 (0.0f, 0.0f);
-	this->m_parallaxDisplacement
-	    = glm::mix (this->m_parallaxDisplacement, (centeredMouse * amount) * influence, response);
+
+	// The smoothed pointer is shared by layer displacement and g_ParallaxPosition.
+	this->m_parallaxPointer = glm::mix (this->m_parallaxPointer, centeredMouse, response);
+	// Layer displacement is a screen fraction and already contains amount and influence;
+	// CImage/CParticle multiply it by the layer's authored parallaxDepth.
+	this->m_parallaxDisplacement = (this->m_parallaxPointer * amount) * influence;
+
+	// Shader-driven depth effects (built-in effects/depthparallax) sample g_ParallaxPosition.
+	// WE feeds a -1..1 centered pointer scaled by mouse influence and camera parallax amount,
+	// with y flipped for the shader-space viewport direction. m_parallaxPointer is -0.5..0.5,
+	// hence the *2. The 0.5 center makes an unscaled/no-parallax value neutral.
+	this->m_parallaxPosition = glm::vec2 (
+	    0.5f + (this->m_parallaxPointer.x * 2.0f) * influence * amount,
+	    0.5f - (this->m_parallaxPointer.y * 2.0f) * influence * amount
+	);
+    } else {
+	// neutral pointer so shaders that sample g_ParallaxPosition do not keep a stale offset
+	this->m_parallaxPointer = glm::vec2 (0.0f);
+	this->m_parallaxDisplacement = glm::vec2 (0.0f);
+	this->m_parallaxPosition = glm::vec2 (0.5f);
     }
 
     // run a tick in the javascript logic
@@ -716,6 +734,8 @@ const glm::vec2* CScene::getMousePositionLast () const { return &this->m_mousePo
 const glm::vec2* CScene::getMousePositionNormalized () const { return &this->m_mousePositionNormalized; }
 
 const glm::vec2* CScene::getParallaxDisplacement () const { return &this->m_parallaxDisplacement; }
+
+const glm::vec2* CScene::getParallaxPosition () const { return &this->m_parallaxPosition; }
 
 glm::vec2 CScene::clampParallaxOffset (const glm::vec2& offset, const glm::vec2& scaledSize) const {
     // the camera's orthogonal window is the world region actually shown on screen,

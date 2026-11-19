@@ -50,10 +50,11 @@ public:
     [[nodiscard]] float getDeltaTime () const;
     [[nodiscard]] float getFps () const;
 
-    const glm::vec2* getMousePosition () const;
-    const glm::vec2* getMousePositionLast () const;
-    const glm::vec2* getMousePositionNormalized () const;
-    const glm::vec2* getParallaxDisplacement () const;
+    [[nodiscard]] const glm::vec2* getMousePosition () const;
+    [[nodiscard]] const glm::vec2* getMousePositionLast () const;
+    [[nodiscard]] const glm::vec2* getMousePositionNormalized () const;
+    [[nodiscard]] const glm::vec2* getParallaxDisplacement () const;
+    [[nodiscard]] const glm::vec2* getParallaxPosition () const;
 
     [[nodiscard]] const std::vector<CObject*>& getObjectsByRenderOrder () const;
     [[nodiscard]] const CObject* getObject (int id) const;
@@ -124,7 +125,12 @@ private:
     glm::vec2 m_mousePosition = {};
     glm::vec2 m_mousePositionLast = {};
     glm::vec2 m_mousePositionNormalized = {};
+    /** Smoothed layer displacement in screen fractions; includes amount and influence. */
     glm::vec2 m_parallaxDisplacement = {};
+    /** Smoothed scene-UV mouse offset in [-0.5, 0.5] (y top-down). */
+    glm::vec2 m_parallaxPointer = {};
+    /** Shader-space pointer uploaded as g_ParallaxPosition; center is (0.5, 0.5). */
+    glm::vec2 m_parallaxPosition = { 0.5f, 0.5f };
     std::shared_ptr<const CFBO> _rt_4FrameBuffer = nullptr;
     std::shared_ptr<const CFBO> _rt_8FrameBuffer = nullptr;
     std::shared_ptr<const CFBO> _rt_Bloom = nullptr;
