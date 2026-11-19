@@ -31,6 +31,7 @@ public:
 
     void setup () override;
     void render () override;
+    [[nodiscard]] bool hitTest (const glm::vec2& normalizedMouse, glm::vec2* localPosition = nullptr) const override;
 
     [[nodiscard]] const Image& getImage () const;
     [[nodiscard]] glm::vec2 getSize () const;
@@ -95,6 +96,9 @@ private:
     glm::mat4 m_modelViewProjectionPass = {};
     glm::mat4 m_modelViewProjectionCopy = {};
     glm::mat4 m_modelViewProjectionScreenInverse = {};
+    /** Local layer pixels (0..m_size) to clip space, including rotation/parallax */
+    glm::mat4 m_localToScreen = glm::mat4 (1.0f);
+    glm::mat4 m_screenToLocal = glm::mat4 (1.0f);
     glm::mat4 m_modelViewProjectionPassInverse = {};
     glm::mat4 m_modelViewProjectionCopyInverse = {};
 

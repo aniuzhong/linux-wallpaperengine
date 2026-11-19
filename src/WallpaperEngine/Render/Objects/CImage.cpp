@@ -3,6 +3,7 @@
 #include "CRenderable.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <iterator>
 #include <optional>
@@ -720,6 +721,8 @@ void CImage::setup () {
     CRenderable::setup ();
 
     this->setupPasses ();
+    // initialise the local/clip transform so the first hit test is accurate
+    this->updateScreenSpacePosition ();
     this->m_initialized = true;
 }
 
@@ -1099,6 +1102,15 @@ void CImage::updateScreenSpacePosition () {
 
     this->m_modelViewProjectionScreen = mvp;
     this->m_modelViewProjectionScreenInverse = glm::inverse (mvp);
+
+    // Local layer pixels (origin top-left, 0..m_size) to clip space. Inverting this
+    // gives both the precise hit test and CursorEvent.localPosition, including
+    // rotation, scale and parallax.
+    glm::mat4 localToWorld = glm::translate (glm::mat4 (1.0f), glm::vec3 (this->m_pos.x, this->m_pos.y, 0.0f));
+    localToWorld = glm::scale (localToWorld, glm::vec3 (transform.scale.x, -transform.scale.y, 1.0f));
+    this->m_localToScreen = mvp * localToWorld;
+    this->m_screenToLocal = glm::inverse (this->m_localToScreen);
+
     if (this->getImage ().model->passthrough) {
 	this->m_modelViewProjectionCopy = this->m_modelViewProjectionScreen;
 	this->m_modelViewProjectionCopyInverse = this->m_modelViewProjectionScreenInverse;
@@ -1106,6 +1118,40 @@ void CImage::updateScreenSpacePosition () {
 }
 
 const Image& CImage::getImage () const { return this->m_image; }
+
+bool CImage::hitTest (const glm::vec2& normalizedMouse, glm::vec2* localPosition) const {
+    if (!this->m_initialized || !this->m_image.visible->value->getBool () || this->getAlpha () <= 0.0f) {
+	return false;
+    }
+
+    // Cursor coordinates are top-left based; the scene FBO is presented vertically
+    // flipped, so this is also the direction used by the clip-space transform.
+    const glm::vec2 ndc = { normalizedMouse.x * 2.0f - 1.0f, normalizedMouse.y * 2.0f - 1.0f };
+
+    // The image is a plane at local z=0. Use the projected centre to recover the
+    // matching NDC depth, which keeps perspective scenes usable.
+    const glm::vec4 centerClip
+	= this->m_localToScreen * glm::vec4 (this->m_size.x * 0.5f, this->m_size.y * 0.5f, 0.0f, 1.0f);
+
+    if (std::abs (centerClip.w) < 1e-6f) {
+	return false;
+    }
+
+    const float ndcZ = centerClip.z / centerClip.w;
+    const glm::vec4 local = this->m_screenToLocal * glm::vec4 (ndc.x, ndc.y, ndcZ, 1.0f);
+
+    if (std::abs (local.w) < 1e-6f) {
+	return false;
+    }
+
+    const glm::vec2 position = glm::vec2 (local.x, local.y) / local.w;
+
+    if (localPosition != nullptr) {
+	*localPosition = position;
+    }
+
+    return position.x >= 0.0f && position.y >= 0.0f && position.x <= this->m_size.x && position.y <= this->m_size.y;
+}
 
 glm::vec2 CImage::getSize () const {
     if (this->m_size.x > 0.0f && this->m_size.y > 0.0f) {

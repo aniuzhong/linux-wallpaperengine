@@ -121,6 +121,37 @@ JSValue texture_animation_set_framerate (JSContext*, JSValueConst, int, JSValueC
     // playback speed overrides are not implemented yet; keep the call safe
     return JS_UNDEFINED;
 }
+
+constexpr const char* kCursorHandlers[] = {
+    "cursorEnter", "cursorLeave", "cursorMove", "cursorDown", "cursorUp", "cursorClick",
+};
+constexpr uint32_t kCursorHandlerCount = sizeof (kCursorHandlers) / sizeof (kCursorHandlers[0]);
+
+uint32_t cursorHandlerBit (const char* name) {
+    for (uint32_t i = 0; i < kCursorHandlerCount; ++i) {
+	if (strcmp (name, kCursorHandlers[i]) == 0) {
+	    return 1u << i;
+	}
+    }
+
+    return 0;
+}
+
+uint32_t readCursorHandlerMask (JSContext* ctx, JSValue module) {
+    uint32_t mask = 0;
+
+    for (uint32_t i = 0; i < kCursorHandlerCount; ++i) {
+	JSValue fn = JS_GetPropertyStr (ctx, module, kCursorHandlers[i]);
+
+	if (JS_IsFunction (ctx, fn)) {
+	    mask |= 1u << i;
+	}
+
+	JS_FreeValue (ctx, fn);
+    }
+
+    return mask;
+}
 } // namespace
 
 void scriptengine_dump (JSContext* ctx, JSValueConst obj) {
@@ -338,6 +369,7 @@ ScriptEngine::~ScriptEngine () {
 
     for (const auto& module : this->m_scriptModules | std::views::values) {
 	JS_FreeValue (this->m_context, module.module);
+	JS_FreeValue (this->m_context, module.thisLayer);
     }
 
     JS_FreeValue (this->m_context, this->m_globalThis);
@@ -649,6 +681,56 @@ JSValue ScriptEngine::call (JSValue module, int argc, JSValue argv[], const char
     return JS_Call (this->m_context, function, module, argc, argv);
 }
 
+void ScriptEngine::activateModule (LoadedModule& module) {
+    this->m_runningModule = &module;
+    JS_SetPropertyStr (
+	this->m_context, this->m_globalThis, "thisLayer", JS_DupValue (this->m_context, module.thisLayer)
+    );
+}
+
+bool ScriptEngine::hasCursorHandler (ScriptableObject& object) const {
+    for (const auto& module : this->m_scriptModules | std::views::values) {
+	if (module.object == &object && module.cursorHandlerMask != 0) {
+	    return true;
+	}
+    }
+
+    return false;
+}
+
+void ScriptEngine::dispatchCursorEvent (
+    ScriptableObject& object, const char* name, const glm::vec3& worldPosition, const glm::vec2& localPosition
+) {
+    const uint32_t handlerBit = cursorHandlerBit (name);
+
+    for (auto& module : this->m_scriptModules | std::views::values) {
+	if (module.object != &object || (module.cursorHandlerMask & handlerBit) == 0) {
+	    continue;
+	}
+
+	JSValue event = JS_NewObject (this->m_context);
+	DynamicValue worldValue { glm::vec3 (worldPosition) };
+	JS_SetPropertyStr (
+	    this->m_context, event, "worldPosition", this->m_adapters.vec3->instantiate (worldValue, true)
+	);
+
+	DynamicValue localValue { glm::vec3 (localPosition.x, localPosition.y, 0.0f) };
+	JS_SetPropertyStr (
+	    this->m_context, event, "localPosition", this->m_adapters.vec3->instantiate (localValue, true)
+	);
+
+	this->activateModule (module);
+	JSValue result = this->call (module.module, 1, &event, name);
+
+	if (JS_IsException (result)) {
+	    logJSException (this->m_context, name);
+	}
+
+	JS_FreeValue (this->m_context, result);
+	JS_FreeValue (this->m_context, event);
+    }
+}
+
 void ScriptEngine::queueScript (const std::string& key, DynamicValue& currentValue, ScriptableObject& object) {
     const auto source = currentValue.getScriptSource ();
 
@@ -683,7 +765,7 @@ void ScriptEngine::queueScript (const std::string& key, DynamicValue& currentVal
 
     // bind the running module before evaluation: createScriptProperties().finish() runs during
     // the module's top-level code and needs access to the value being scripted
-    LoadedModule temporary { currentValue, JS_UNDEFINED };
+    LoadedModule temporary { currentValue, JS_UNDEFINED, JS_UNDEFINED, &object };
     this->m_runningModule = &temporary;
 
     // running the compiled module links and executes it, the returned promise fulfills with
@@ -717,6 +799,7 @@ void ScriptEngine::queueScript (const std::string& key, DynamicValue& currentVal
 	LoadedModule {
 	    .value = currentValue,
 	    .module = module,
+	    .object = &object,
 	}
     );
 
@@ -725,6 +808,8 @@ void ScriptEngine::queueScript (const std::string& key, DynamicValue& currentVal
 	this->m_runningModule = nullptr;
 	return;
     }
+
+    inserted.first->second.cursorHandlerMask = readCursorHandlerMask (this->m_context, module);
 
     JSValue thisLayer = this->m_adapters.object->instantiate (object);
 
@@ -766,6 +851,7 @@ void ScriptEngine::queueScript (const std::string& key, DynamicValue& currentVal
 	JS_DefinePropertyValueStr (this->m_context, thisLayer, "getTextureAnimation", getter, JS_PROP_ENUMERABLE);
     }
 
+    inserted.first->second.thisLayer = JS_DupValue (this->m_context, thisLayer);
     JS_SetPropertyStr (this->m_context, this->m_globalThis, "thisLayer", thisLayer);
 
     // script properties do not need update as they're connected directly to the source data
@@ -821,7 +907,7 @@ void ScriptEngine::tick () {
 
     // run all update methods
     for (auto& module : this->m_scriptModules | std::views::values) {
-	this->m_runningModule = &module;
+	this->activateModule (module);
 
 	JSValue args[] = { this->dynamicToJs (module.value) };
 	JSValue result = this->call (module.module, 1, args, "update");

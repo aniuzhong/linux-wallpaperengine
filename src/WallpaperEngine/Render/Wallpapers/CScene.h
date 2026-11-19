@@ -83,8 +83,9 @@ public:
 protected:
     void renderFrame (const glm::ivec4& viewport) override;
     void setupFramebuffers (bool sceneDepthBuffer) override;
-    void updateUVs (const glm::ivec4& viewport, const bool vflip) override;
+    void updateUVs (const glm::ivec4& viewport, bool vflip) override;
     void updateMouse (const glm::ivec4& viewport);
+    void dispatchCursorEvents ();
 
     friend class CWallpaper;
 
@@ -136,6 +137,13 @@ private:
     glm::vec2 m_mousePosition = {};
     glm::vec2 m_mousePositionLast = {};
     glm::vec2 m_mousePositionNormalized = {};
+    /** Cursor fraction in the output viewport, top-left origin (for hit testing) */
+    glm::vec2 m_mousePositionViewport = {};
+    glm::vec2 m_lastCursorEventPosition = { -1.0f, -1.0f };
+    Scripting::ScriptableObject* m_cursorTarget = nullptr;
+    glm::vec2 m_cursorTargetLocal = {};
+    Scripting::ScriptableObject* m_cursorPressTarget = nullptr;
+    bool m_mouseLeftDown = false;
     /** Smoothed layer displacement in screen fractions; includes amount and influence. */
     glm::vec2 m_parallaxDisplacement = {};
     /** Smoothed scene-UV mouse offset in [-0.5, 0.5] (y top-down). */
