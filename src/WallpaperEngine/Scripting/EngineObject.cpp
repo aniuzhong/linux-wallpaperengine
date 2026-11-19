@@ -1,7 +1,11 @@
 #include "EngineObject.h"
 #include "ScriptEngine.h"
+#include "WallpaperEngine/Audio/AudioContext.h"
+#include "WallpaperEngine/Audio/Drivers/Recorders/PlaybackRecorder.h"
 #include "WallpaperEngine/Logging/Log.h"
+#include "WallpaperEngine/Render/Wallpapers/CScene.h"
 
+#include <algorithm>
 #include <ranges>
 
 using namespace WallpaperEngine::Scripting;
@@ -29,6 +33,67 @@ JSValue engine_get_runtime (JSContext* ctx, JSValueConst this_val, int argc, JSV
 
 JSValue engine_get_daytime (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     return JS_NewFloat64 (ctx, g_Daytime);
+}
+
+namespace {
+/**
+ * Creates a Float32Array whose backing store can be updated in-place every frame.
+ * `data` points into the ArrayBuffer and stays valid while the cached JSValue lives.
+ */
+JSValue createFloat32Array (JSContext* ctx, int length, float** data) {
+    JSValue lengthValue = JS_NewInt32 (ctx, length);
+    JSValue array = JS_NewTypedArray (ctx, 1, &lengthValue, JS_TYPED_ARRAY_FLOAT32);
+    JS_FreeValue (ctx, lengthValue);
+
+    *data = nullptr;
+
+    if (JS_IsException (array)) {
+	return array;
+    }
+
+    size_t byteOffset = 0;
+    size_t byteLength = 0;
+    size_t bytesPerElement = 0;
+    JSValue buffer = JS_GetTypedArrayBuffer (ctx, array, &byteOffset, &byteLength, &bytesPerElement);
+
+    if (JS_IsException (buffer)) {
+	JS_FreeValue (ctx, array);
+	return buffer;
+    }
+
+    size_t bufferSize = 0;
+    auto* base = JS_GetArrayBuffer (ctx, &bufferSize, buffer);
+    JS_FreeValue (ctx, buffer);
+
+    if (base == nullptr || bytesPerElement != sizeof (float) || byteOffset + byteLength > bufferSize) {
+	JS_FreeValue (ctx, array);
+	return JS_EXCEPTION;
+    }
+
+    *data = reinterpret_cast<float*> (base + byteOffset);
+    return array;
+}
+} // namespace
+
+JSValue engine_register_audio_buffers (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    JSClassID classId = 0;
+    auto* engine = static_cast<EngineObject*> (JS_GetAnyOpaque (this_val, &classId));
+
+    if (engine == nullptr) {
+	return JS_ThrowInternalError (ctx, "registerAudioBuffers: no engine");
+    }
+
+    int32_t resolution = 32;
+
+    if (argc >= 1 && JS_IsNumber (argv[0])) {
+	JS_ToInt32 (ctx, &resolution, argv[0]);
+    }
+
+    if (resolution != 16 && resolution != 32 && resolution != 64) {
+	resolution = 32;
+    }
+
+    return engine->getAudioBuffer (resolution);
 }
 
 JSValue engine_stop_interval (
@@ -192,7 +257,92 @@ EngineObject::EngineObject (ScriptEngine& engine, Render::Wallpapers::CScene& sc
 	JS_NewCFunction (this->m_engine.getContext (), engine_open_user_shortcut, "openUserShortcut", 0),
 	JS_PROP_ENUMERABLE
     );
+    JS_DefinePropertyValueStr (
+	this->m_engine.getContext (), this->m_instance, "registerAudioBuffers",
+	JS_NewCFunction (this->m_engine.getContext (), engine_register_audio_buffers, "registerAudioBuffers", 1),
+	JS_PROP_ENUMERABLE
+    );
     // TODO: ADD THE REST OF THE DEFINITION!
+}
+
+JSValue EngineObject::getAudioBuffer (int resolution) {
+    const auto it = this->m_audioBuffers.find (resolution);
+
+    if (it != this->m_audioBuffers.end ()) {
+	return JS_DupValue (this->m_engine.getContext (), it->second.object);
+    }
+
+    JSContext* ctx = this->m_engine.getContext ();
+    AudioBufferState state { .resolution = resolution };
+
+    const auto cleanup = [ctx, &state] () {
+	JS_FreeValue (ctx, state.left);
+	JS_FreeValue (ctx, state.right);
+	JS_FreeValue (ctx, state.average);
+    };
+
+    state.left = createFloat32Array (ctx, resolution, &state.leftData);
+
+    if (JS_IsException (state.left)) {
+	cleanup ();
+	return JS_EXCEPTION;
+    }
+
+    state.right = createFloat32Array (ctx, resolution, &state.rightData);
+
+    if (JS_IsException (state.right)) {
+	cleanup ();
+	return JS_EXCEPTION;
+    }
+
+    state.average = createFloat32Array (ctx, resolution, &state.averageData);
+
+    if (JS_IsException (state.average)) {
+	cleanup ();
+	return JS_EXCEPTION;
+    }
+
+    state.object = JS_NewObject (ctx);
+
+    if (JS_IsException (state.object)) {
+	cleanup ();
+	return JS_EXCEPTION;
+    }
+
+    // The three arrays are live Float32Arrays updated from the recorder every tick.
+    // PulseAudio capture is currently mono, so left/right mirror the same spectrum
+    // until the recorder exposes separate channels.
+    JS_SetPropertyStr (ctx, state.object, "left", JS_DupValue (ctx, state.left));
+    JS_SetPropertyStr (ctx, state.object, "right", JS_DupValue (ctx, state.right));
+    JS_SetPropertyStr (ctx, state.object, "average", JS_DupValue (ctx, state.average));
+
+    const auto inserted = this->m_audioBuffers.emplace (resolution, std::move (state));
+
+    return JS_DupValue (ctx, inserted.first->second.object);
+}
+
+void EngineObject::updateAudioBuffers () {
+    if (this->m_audioBuffers.empty ()) {
+	return;
+    }
+
+    const auto& recorder = this->m_scene.getAudioContext ().getRecorder ();
+
+    for (auto& [resolution, state] : this->m_audioBuffers) {
+	const float* data = resolution == 16 ? recorder.audio16
+	    : resolution == 32               ? recorder.audio32
+					     : recorder.audio64;
+
+	for (int32_t i = 0; i < resolution; ++i) {
+	    // SceneScript explicitly allows values above 1.0; only clamp the
+	    // negative excursions so audio-reactive properties stay sane.
+	    const float value = std::max (data[i], 0.0f);
+
+	    state.leftData[i] = value;
+	    state.rightData[i] = value;
+	    state.averageData[i] = value;
+	}
+    }
 }
 
 EngineObject::~EngineObject () {
@@ -207,6 +357,14 @@ EngineObject::~EngineObject () {
     engineInstances.erase (this->m_instanceId);
     this->m_intervals.clear ();
     this->m_timeouts.clear ();
+
+    for (auto& [resolution, state] : this->m_audioBuffers) {
+	JS_FreeValue (this->m_engine.getContext (), state.object);
+	JS_FreeValue (this->m_engine.getContext (), state.left);
+	JS_FreeValue (this->m_engine.getContext (), state.right);
+	JS_FreeValue (this->m_engine.getContext (), state.average);
+    }
+    this->m_audioBuffers.clear ();
 
     JS_FreeValue (this->m_engine.getContext (), this->m_instance);
 }
@@ -257,6 +415,8 @@ void EngineObject::clearTimeout (uint32_t id) {
 }
 
 void EngineObject::tick () {
+    this->updateAudioBuffers ();
+
     const auto now = std::chrono::steady_clock::now ();
 
     // check any interval and run them if needed

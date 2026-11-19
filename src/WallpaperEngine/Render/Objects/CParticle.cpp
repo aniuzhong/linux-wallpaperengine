@@ -83,6 +83,29 @@ CParticle::CParticle (Wallpapers::CScene& scene, const Particle& particle) :
 	m_vertices.resize (m_maxParticles * verticesPerParticle * SPRITE_FLOATS_PER_VERTEX);
 	m_indices.resize (m_maxParticles * indicesPerParticle);
     }
+
+    // Particle instance overrides are regular DynamicValues too, so scripts attached
+    // to them (e.g. audio-reactive emission rate) go through the same module lifecycle
+    // as image/text properties.
+    const auto queueOverride = [this] (const char* name, const UserSettingUniquePtr& setting) {
+	if (setting == nullptr || setting->value == nullptr) {
+	    return;
+	}
+
+	this->getScene ().getScriptEngine ().queueScript (
+	    std::string ("instanceoverride_") + name + "_" + std::to_string (this->getId ()), *setting->value, *this
+	);
+    };
+
+    queueOverride ("enabled", particle.instanceOverride.enabled);
+    queueOverride ("alpha", particle.instanceOverride.alpha);
+    queueOverride ("size", particle.instanceOverride.size);
+    queueOverride ("lifetime", particle.instanceOverride.lifetime);
+    queueOverride ("rate", particle.instanceOverride.rate);
+    queueOverride ("speed", particle.instanceOverride.speed);
+    queueOverride ("count", particle.instanceOverride.count);
+    queueOverride ("color", particle.instanceOverride.color);
+    queueOverride ("colorn", particle.instanceOverride.colorn);
 }
 
 CParticle::~CParticle () {
