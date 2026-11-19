@@ -13,6 +13,7 @@
 #include "WallpaperEngine/Data/Parsers/ObjectParser.h"
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
 #include <ranges>
 
@@ -480,17 +481,39 @@ void CScene::renderFrame (const glm::ivec4& viewport) {
 	&& !this->getContext ().getApp ().getContext ().settings.mouse.disableparallax) {
 	const float influence = this->getScene ().camera.parallax.mouseInfluence->value->getFloat ();
 	const float amount = this->getScene ().camera.parallax.amount->value->getFloat ();
-	const float delay = glm::clamp (
-	    this->getScene ().camera.parallax.delay->value->getFloat () * (g_Time - g_TimeLast), 0.0f, 1.0f
-	);
+	const float delay = this->getScene ().camera.parallax.delay->value->getFloat ();
+	// Camera parallax parameter conventions and tuning references:
+	//
+	//   cameraparallaxdelay           smoothing time in seconds (WE editor range 0..2, default 0.1)
+	//   cameraparallaxamount          overall strength (WE editor range 0..2)
+	//   cameraparallaxmouseinfluence  mouse influence (WE editor range -1..1; 0 disables it,
+	//                                 negative values invert the movement direction)
+	//   parallaxDepth (per layer)     X/Y strength; 0 disables that axis, negative inverts it
+	//
+	// Delay is a time constant, not a rate. Use first-order exponential smoothing:
+	//   alpha = 1 - exp(-dt / delay), with delay <= 0 snapping to the target immediately.
+	// The old `delay * dt` lerp is equivalent to tau = 1/delay: the common 0.1 value produced
+	// a 10 s lag while 2.0 produced 0.5 s, so larger authored delays moved faster.
+	//
+	// Sources:
+	//   - WE editor Delay slider range 0..2 s (registration of
+	//     ui_editor_scene_options_camera_parallax_delay in bin/wallpaperui.exe: min 0.0, max 2.0)
+	//   - https://docs.wallpaperengine.io/en/scene/parallax/introduction.html
+	//   - upstream PR Almamu/linux-wallpaperengine#741 (delay in seconds, exp smoothing)
+	//   - upstream PR Almamu/linux-wallpaperengine#624 uses delay * 0.1; not adopted because it compresses the
+	//     editor's 0..2 s range to 0..0.2 s (0.1 would be only 10 ms)
+	const float timeConstant = delay;
+	const float dt = g_Time - g_TimeLast;
+	const float response = timeConstant > 0.0f ? 1.0f - std::exp (-dt / timeConstant) : 1.0f;
 
-	// with mouse input disabled the position reads as {0,0}, which would sit the virtual
-	// cursor at a screen corner and apply a constant saturated displacement; center it instead
+	// m_mousePosition is scene UV with y top-down; center it so the pointer spans -0.5..0.5.
+	// With mouse input disabled the position reads as {0,0}, which would sit the virtual
+	// cursor at a screen corner and apply a constant saturated displacement; center it instead.
 	const glm::vec2 centeredMouse = this->getContext ().getApp ().getContext ().settings.mouse.enabled
 	    ? this->m_mousePosition - glm::vec2 (0.5f, 0.5f)
 	    : glm::vec2 (0.0f, 0.0f);
 	this->m_parallaxDisplacement
-	    = glm::mix (this->m_parallaxDisplacement, (centeredMouse * amount) * influence, delay);
+	    = glm::mix (this->m_parallaxDisplacement, (centeredMouse * amount) * influence, response);
     }
 
     // run a tick in the javascript logic
