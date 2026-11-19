@@ -918,6 +918,10 @@ void CPass::setupUniforms () {
     this->addUniform ("g_ViewProjectionMatrix", &this->m_viewProjectionMatrix);
     this->addUniform ("g_PointerPosition", scene.getMousePosition ());
     this->addUniform ("g_PointerPositionLast", scene.getMousePositionLast ());
+    // Built-in effects/depthparallax samples g_ParallaxPosition to warp the image with a depth
+    // map. Without this binding the uniform stayed at its GL default of 0 and the effect was
+    // static.
+    this->addUniform ("g_ParallaxPosition", scene.getParallaxPosition ());
     this->addUniform ("g_EffectTextureProjectionMatrix", glm::mat4 (1.0));
     this->addUniform ("g_EffectTextureProjectionMatrixInverse", glm::mat4 (1.0));
     // texel sizes track the scene FBO's real resolution through a pointer, so
