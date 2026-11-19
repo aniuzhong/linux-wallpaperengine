@@ -20,6 +20,9 @@ using namespace WallpaperEngine::Data::Model;
 CParticle::CParticle (Wallpapers::CScene& scene, const Particle& particle) :
     CObject (scene, particle), CRenderable (scene, particle, *particle.material->material),
     ScriptableObject (scene, particle), m_particle (particle) {
+    // replay texture-animation requests made by scripts during base construction
+    this->attachRenderable (this);
+
     this->registerProperty ("scale", *particle.scale->value);
     this->registerProperty ("angles", *particle.angles->value);
     this->registerProperty ("visible", *particle.visible->value);

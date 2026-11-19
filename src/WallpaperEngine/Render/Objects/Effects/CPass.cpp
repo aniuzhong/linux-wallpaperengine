@@ -257,28 +257,43 @@ CPass::resolveTextureAnimationState (const std::shared_ptr<const TextureProvider
 	return state;
     }
 
-    double currentRenderTime = fmod (
-	static_cast<double> (this->getContext ().getDriver ().getRenderTime ()), this->m_renderable.getAnimationTime ()
-    );
+    const auto& frames = texture->getFrames ();
 
-    for (const auto& frameCur : texture->getFrames ()) {
-	currentRenderTime -= frameCur->frametime;
+    if (frames.empty ()) {
+	return state;
+    }
 
-	if (currentRenderTime > 0.0f) {
-	    continue;
-	}
-
+    const auto applyFrame = [&state, &texture] (const auto& frameCur) {
 	state.currentTexture = frameCur->frameNumber;
-	state.translation.x = frameCur->x / texture->getTextureWidth (state.currentTexture);
-	state.translation.y = frameCur->y / texture->getTextureHeight (state.currentTexture);
+	state.translation.x = frameCur->x / static_cast<float> (texture->getTextureWidth (state.currentTexture));
+	state.translation.y = frameCur->y / static_cast<float> (texture->getTextureHeight (state.currentTexture));
 
 	state.rotation.x = frameCur->width1 / static_cast<float> (texture->getTextureWidth (state.currentTexture));
 	state.rotation.y = frameCur->width2 / static_cast<float> (texture->getTextureWidth (state.currentTexture));
 	state.rotation.z = frameCur->height2 / static_cast<float> (texture->getTextureHeight (state.currentTexture));
 	state.rotation.w = frameCur->height1 / static_cast<float> (texture->getTextureHeight (state.currentTexture));
-	break;
+    };
+
+    // SceneScript controls the playhead (setFrame/pause/play/stop); without any
+    // script interaction it advances with the render time like before.
+    if (this->m_renderable.getAnimationTime () <= 0.0) {
+	applyFrame (frames.front ());
+	return state;
     }
 
+    double currentRenderTime = this->m_renderable.getTextureAnimationTime ();
+
+    for (const auto& frameCur : frames) {
+	if (currentRenderTime < frameCur->frametime) {
+	    applyFrame (frameCur);
+	    return state;
+	}
+
+	currentRenderTime -= frameCur->frametime;
+    }
+
+    // floating point edge at the loop boundary: show the last frame
+    applyFrame (frames.back ());
     return state;
 }
 

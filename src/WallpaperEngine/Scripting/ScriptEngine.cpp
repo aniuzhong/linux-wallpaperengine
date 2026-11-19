@@ -45,6 +45,84 @@ extern char** environ;
 extern float g_Time;
 extern float g_TimeLast;
 
+namespace {
+struct TextureAnimationApi {
+    WallpaperEngine::Scripting::ScriptableObject* object;
+};
+
+const JSClassDef textureAnimationClassDefinition = {
+    .class_name = "ITextureAnimation",
+    .finalizer =
+	[] (JSRuntime*, JSValueConst value) {
+	    // class IDs are per-runtime, so read the id from the object being finalized
+	    delete static_cast<TextureAnimationApi*> (JS_GetOpaque (value, JS_GetClassID (value)));
+	},
+};
+
+TextureAnimationApi* get_texture_animation_api (JSValueConst value) {
+    return static_cast<TextureAnimationApi*> (JS_GetOpaque (value, JS_GetClassID (value)));
+}
+
+JSValue texture_animation_set_frame (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* api = get_texture_animation_api (this_val);
+
+    if (api == nullptr || api->object == nullptr) {
+	return JS_UNDEFINED;
+    }
+
+    if (argc < 1) {
+	return JS_EXCEPTION;
+    }
+
+    int32_t frame = 0;
+
+    if (JS_ToInt32 (ctx, &frame, argv[0]) < 0) {
+	return JS_EXCEPTION;
+    }
+
+    api->object->setTextureAnimationFrame (frame);
+    return JS_UNDEFINED;
+}
+
+JSValue texture_animation_play (JSContext*, JSValueConst this_val, int, JSValueConst*) {
+    auto* api = get_texture_animation_api (this_val);
+
+    if (api == nullptr || api->object == nullptr) {
+	return JS_UNDEFINED;
+    }
+
+    api->object->playTextureAnimation ();
+    return JS_UNDEFINED;
+}
+
+JSValue texture_animation_pause (JSContext*, JSValueConst this_val, int, JSValueConst*) {
+    auto* api = get_texture_animation_api (this_val);
+
+    if (api == nullptr || api->object == nullptr) {
+	return JS_UNDEFINED;
+    }
+
+    api->object->pauseTextureAnimation ();
+    return JS_UNDEFINED;
+}
+
+JSValue texture_animation_stop (JSContext*, JSValueConst this_val, int, JSValueConst*) {
+    auto* api = get_texture_animation_api (this_val);
+
+    if (api == nullptr || api->object == nullptr) {
+	return JS_UNDEFINED;
+    }
+
+    api->object->stopTextureAnimation ();
+    return JS_UNDEFINED;
+}
+
+JSValue texture_animation_set_framerate (JSContext*, JSValueConst, int, JSValueConst*) {
+    // playback speed overrides are not implemented yet; keep the call safe
+    return JS_UNDEFINED;
+}
+} // namespace
+
 void scriptengine_dump (JSContext* ctx, JSValueConst obj) {
     JSPropertyEnum* props;
     uint32_t len;
@@ -206,6 +284,12 @@ ScriptEngine::ScriptEngine (Wallpapers::CScene& scene, Media::MediaSource& media
     }
 
     this->m_globalThis = JS_GetGlobalObject (this->m_context);
+
+    JS_NewClassID (this->m_runtime, &this->m_textureAnimationClassId);
+
+    if (JS_NewClass (this->m_runtime, this->m_textureAnimationClassId, &textureAnimationClassDefinition) < 0) {
+	sLog.error ("ScriptEngine: failed to register ITextureAnimation class");
+    }
 
     this->m_adapters = {
 	.vec4 = std::unique_ptr<Adapters::VectorAdapter<4>> (new Adapters::VectorAdapter<4> (*this)),
@@ -644,28 +728,31 @@ void ScriptEngine::queueScript (const std::string& key, DynamicValue& currentVal
 
     JSValue thisLayer = this->m_adapters.object->instantiate (object);
 
-    // texture animation control is not implemented yet; hand back a safe stub so
-    // scripts calling getTextureAnimation ().setFrame (...) keep running
+    // expose texture animation control through thisLayer.getTextureAnimation()
     {
-	JSValue anim = JS_NewObject (this->m_context);
-	JSValue noop = JS_NewCFunction (
-	    this->m_context,
-	    [] (JSContext* ctx, JSValueConst, int, JSValueConst*) -> JSValue {
-		static bool warned = false;
-		if (!warned) {
-		    warned = true;
-		    sLog.out ("ScriptEngine: thisLayer texture animation control is not supported yet");
-		}
-		return JS_UNDEFINED;
-	    },
-	    "noop", 1
+	JSValue anim = JS_NewObjectClass (this->m_context, this->m_textureAnimationClassId);
+	JS_SetOpaque (anim, new TextureAnimationApi { .object = &object });
+
+	JS_DefinePropertyValueStr (
+	    this->m_context, anim, "setFrame",
+	    JS_NewCFunction (this->m_context, texture_animation_set_frame, "setFrame", 1), JS_PROP_ENUMERABLE
 	);
-	for (const char* method : { "setFrame", "setFramerate", "play", "stop", "pause" }) {
-	    JS_DefinePropertyValueStr (
-		this->m_context, anim, method, JS_DupValue (this->m_context, noop), JS_PROP_ENUMERABLE
-	    );
-	}
-	JS_FreeValue (this->m_context, noop);
+	JS_DefinePropertyValueStr (
+	    this->m_context, anim, "setFramerate",
+	    JS_NewCFunction (this->m_context, texture_animation_set_framerate, "setFramerate", 1), JS_PROP_ENUMERABLE
+	);
+	JS_DefinePropertyValueStr (
+	    this->m_context, anim, "play", JS_NewCFunction (this->m_context, texture_animation_play, "play", 0),
+	    JS_PROP_ENUMERABLE
+	);
+	JS_DefinePropertyValueStr (
+	    this->m_context, anim, "pause", JS_NewCFunction (this->m_context, texture_animation_pause, "pause", 0),
+	    JS_PROP_ENUMERABLE
+	);
+	JS_DefinePropertyValueStr (
+	    this->m_context, anim, "stop", JS_NewCFunction (this->m_context, texture_animation_stop, "stop", 0),
+	    JS_PROP_ENUMERABLE
+	);
 
 	JS_DefinePropertyValueStr (this->m_context, thisLayer, "__textureAnimation", anim, JS_PROP_ENUMERABLE);
 

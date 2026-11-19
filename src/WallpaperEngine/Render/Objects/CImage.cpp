@@ -106,6 +106,9 @@ CImage::CImage (Wallpapers::CScene& scene, const Image& image) :
     m_modelViewProjectionPass (glm::mat4 (1.0)), m_modelViewProjectionCopy (), m_modelViewProjectionScreenInverse (),
     m_modelViewProjectionPassInverse (glm::inverse (m_modelViewProjectionPass)), m_modelViewProjectionCopyInverse (),
     m_modelMatrix (), m_viewProjectionMatrix (), m_image (image), m_pos (), m_initialized (false) {
+    // replay texture-animation requests made by scripts during base construction
+    this->attachRenderable (this);
+
     // register any properties in use on this object
     this->registerProperty ("origin", *image.origin->value);
     this->registerProperty ("scale", *image.scale->value);
