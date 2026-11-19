@@ -597,12 +597,18 @@ void ScriptEngine::queueScript (const std::string& key, DynamicValue& currentVal
 	moduleDef = static_cast<JSModuleDef*> (JS_VALUE_GET_PTR (compiled));
     }
 
+    // bind the running module before evaluation: createScriptProperties().finish() runs during
+    // the module's top-level code and needs access to the value being scripted
+    LoadedModule temporary { currentValue, JS_UNDEFINED };
+    this->m_runningModule = &temporary;
+
     // running the compiled module links and executes it, the returned promise fulfills with
     // undefined for modules without top-level await (imports are resolved synchronously here)
     JSValue evaluation = JS_EvalFunction (this->m_context, compiled);
 
     if (JS_IsException (evaluation)) {
 	logJSException (this->m_context, ("queueScript.evaluate " + key).c_str ());
+	this->m_runningModule = nullptr;
 	return;
     }
 
@@ -615,6 +621,7 @@ void ScriptEngine::queueScript (const std::string& key, DynamicValue& currentVal
 
 	if (JS_IsException (module)) {
 	    logJSException (this->m_context, ("queueScript.namespace " + key).c_str ());
+	    this->m_runningModule = nullptr;
 	    return;
 	}
     } else {
@@ -630,32 +637,93 @@ void ScriptEngine::queueScript (const std::string& key, DynamicValue& currentVal
     );
 
     if (!inserted.second) {
+	JS_FreeValue (this->m_context, module);
+	this->m_runningModule = nullptr;
 	return;
     }
 
-    JS_SetPropertyStr (this->m_context, this->m_globalThis, "thisLayer", this->m_adapters.object->instantiate (object));
+    JSValue thisLayer = this->m_adapters.object->instantiate (object);
+
+    // texture animation control is not implemented yet; hand back a safe stub so
+    // scripts calling getTextureAnimation ().setFrame (...) keep running
+    {
+	JSValue anim = JS_NewObject (this->m_context);
+	JSValue noop = JS_NewCFunction (
+	    this->m_context,
+	    [] (JSContext* ctx, JSValueConst, int, JSValueConst*) -> JSValue {
+		static bool warned = false;
+		if (!warned) {
+		    warned = true;
+		    sLog.out ("ScriptEngine: thisLayer texture animation control is not supported yet");
+		}
+		return JS_UNDEFINED;
+	    },
+	    "noop", 1
+	);
+	for (const char* method : { "setFrame", "setFramerate", "play", "stop", "pause" }) {
+	    JS_DefinePropertyValueStr (
+		this->m_context, anim, method, JS_DupValue (this->m_context, noop), JS_PROP_ENUMERABLE
+	    );
+	}
+	JS_FreeValue (this->m_context, noop);
+
+	JS_DefinePropertyValueStr (this->m_context, thisLayer, "__textureAnimation", anim, JS_PROP_ENUMERABLE);
+
+	JSValue getter = JS_NewCFunction (
+	    this->m_context,
+	    [] (JSContext* ctx, JSValueConst this_val, int, JSValueConst*) -> JSValue {
+		return JS_GetPropertyStr (ctx, this_val, "__textureAnimation");
+	    },
+	    "getTextureAnimation", 0
+	);
+	JS_DefinePropertyValueStr (this->m_context, thisLayer, "getTextureAnimation", getter, JS_PROP_ENUMERABLE);
+    }
+
+    JS_SetPropertyStr (this->m_context, this->m_globalThis, "thisLayer", thisLayer);
 
     // script properties do not need update as they're connected directly to the source data
     this->m_runningModule = &inserted.first->second;
 
+    // WE runs init() once when the layer loads, its return value replaces the property value
+    {
+	JSValue args[] = { this->dynamicToJs (currentValue) };
+	JSValue result = this->call (module, 1, args, "init");
+
+	ScopeGuard guard ([this, args, result] () {
+	    JS_FreeValue (this->m_context, result);
+	    JS_FreeValue (this->m_context, args[0]);
+	});
+
+	if (JS_IsException (result)) {
+	    logJSException (this->m_context, ("queueScript.init " + key).c_str ());
+	} else if (!JS_IsUndefined (result)) {
+	    jsToDynamicValue (this->m_context, result, currentValue);
+	}
+    }
+
     // check if there's an update method and run it
-    JSValue args[] = { this->dynamicToJs (currentValue) };
-    JSValue result = this->call (module, 1, args, "update");
+    {
+	JSValue args[] = { this->dynamicToJs (currentValue) };
+	JSValue result = this->call (module, 1, args, "update");
 
-    ScopeGuard guard2 ([this, args, result] () {
-	JS_FreeValue (this->m_context, result);
-	JS_FreeValue (this->m_context, args[0]);
-    });
+	ScopeGuard guard ([this, args, result] () {
+	    JS_FreeValue (this->m_context, result);
+	    JS_FreeValue (this->m_context, args[0]);
+	});
 
-    if (JS_IsException (result)) {
-	logJSException (this->m_context, ("queueScript.update " + key).c_str ());
-	return;
+	if (JS_IsException (result)) {
+	    logJSException (this->m_context, ("queueScript.update " + key).c_str ());
+	    this->m_runningModule = nullptr;
+	    return;
+	}
+
+	// modules without an update export evaluate to undefined, keep the parsed value as is
+	if (!JS_IsUndefined (result)) {
+	    jsToDynamicValue (this->m_context, result, currentValue);
+	}
     }
 
-    // modules without an update export evaluate to undefined, keep the parsed value as is
-    if (!JS_IsUndefined (result)) {
-	jsToDynamicValue (this->m_context, result, currentValue);
-    }
+    this->m_runningModule = nullptr;
 }
 
 void ScriptEngine::tick () {
