@@ -5,6 +5,7 @@
 #include "WallpaperEngine/Render/Objects/CText.h"
 
 #include "WallpaperEngine/Render/WallpaperState.h"
+#include "WallpaperEngine/Scripting/ScriptableObject.h"
 
 #include "CScene.h"
 #include "WallpaperEngine/Logging/Log.h"
@@ -464,6 +465,7 @@ Camera& CScene::getCamera () const { return *this->m_camera; }
 void CScene::renderFrame (const glm::ivec4& viewport) {
     // ensure the virtual mouse position is up to date
     this->updateMouse (viewport);
+    this->dispatchCursorEvents ();
 
     // update the parallax position if required
     if (this->getScene ().camera.parallax.enabled->value->getBool ()
@@ -661,6 +663,9 @@ void CScene::updateMouse (const glm::ivec4& viewport) {
     // Particle code expects this convention: 0=bottom results in negative Y (down), 1=top results in positive Y (up)
     double normalizedMouseY = glm::clamp ((position.y - viewport.y) / viewport.w, 0.0, 1.0);
 
+    // SceneScript cursor events use a top-left origin
+    this->m_mousePositionViewport = { mouseX, 1.0 - normalizedMouseY };
+
     // Account for UV cropping when using fill/fit scaling modes
     // The scene may be rendered larger than viewport and cropped via UVs
     const auto uvs = this->getState ().getTextureUVs ();
@@ -675,6 +680,96 @@ void CScene::updateMouse (const glm::ivec4& viewport) {
 
     this->m_mousePosition.x = this->m_mousePositionNormalized.x;
     this->m_mousePosition.y = uvs.vstart + mouseY * (uvs.vend - uvs.vstart);
+}
+
+void CScene::dispatchCursorEvents () {
+    if (!this->getContext ().getApp ().getContext ().settings.mouse.enabled) {
+	return;
+    }
+
+    // the last object in render order is the top-most one
+    Scripting::ScriptableObject* target = nullptr;
+    glm::vec2 targetLocal = {};
+
+    for (auto it = this->m_objectsByRenderOrder.rbegin (); it != this->m_objectsByRenderOrder.rend (); ++it) {
+	auto* scriptable = dynamic_cast<Scripting::ScriptableObject*> (*it);
+
+	// non-scripted layers cannot receive cursor events, so avoid hit-testing them
+	if (scriptable == nullptr || !this->m_scriptEngine->hasCursorHandler (*scriptable)) {
+	    continue;
+	}
+
+	if ((*it)->hitTest (this->m_mousePositionViewport, &targetLocal)) {
+	    target = scriptable;
+	    break;
+	}
+    }
+
+    const glm::vec3 worldPosition = this->getMousePositionWorld ();
+
+    if (target != this->m_cursorTarget) {
+	if (this->m_cursorTarget != nullptr) {
+	    this->m_scriptEngine->dispatchCursorEvent (
+		*this->m_cursorTarget, "cursorLeave", worldPosition, this->m_cursorTargetLocal
+	    );
+	}
+
+	if (target != nullptr) {
+	    this->m_scriptEngine->dispatchCursorEvent (*target, "cursorEnter", worldPosition, targetLocal);
+	}
+
+	this->m_cursorTarget = target;
+	this->m_cursorTargetLocal = targetLocal;
+    }
+
+    const bool moved = this->m_mousePositionViewport != this->m_lastCursorEventPosition;
+
+    if (target != nullptr && moved) {
+	this->m_scriptEngine->dispatchCursorEvent (*target, "cursorMove", worldPosition, targetLocal);
+    }
+
+    if (moved) {
+	this->m_lastCursorEventPosition = this->m_mousePositionViewport;
+    }
+
+    if (target != nullptr) {
+	this->m_cursorTargetLocal = targetLocal;
+    }
+
+    const bool leftDown = this->getContext ().getInputContext ().getMouseInput ().leftClick ()
+	== WallpaperEngine::Input::MouseClickStatus::Clicked;
+
+    if (leftDown && !this->m_mouseLeftDown) {
+	this->m_cursorPressTarget = target;
+
+	if (target != nullptr) {
+	    this->m_scriptEngine->dispatchCursorEvent (*target, "cursorDown", worldPosition, targetLocal);
+	}
+    } else if (!leftDown && this->m_mouseLeftDown) {
+	if (this->m_cursorPressTarget != nullptr) {
+	    glm::vec2 pressLocal = {};
+
+	    // even when the cursor left the object this still yields its local
+	    // coordinates, which is what cursorUp/cursorClick should report. The
+	    // boolean result is intentionally discarded.
+	    (void)this->m_cursorPressTarget->hitTest (this->m_mousePositionViewport, &pressLocal);
+
+	    this->m_scriptEngine->dispatchCursorEvent (
+		*this->m_cursorPressTarget, "cursorUp", worldPosition, pressLocal
+	    );
+
+	    // cursorClick only exists when press and release happened on the same object
+	    if (target == this->m_cursorPressTarget) {
+		this->m_scriptEngine->dispatchCursorEvent (
+		    *this->m_cursorPressTarget, "cursorClick", worldPosition, pressLocal
+		);
+	    }
+	}
+
+	this->m_cursorPressTarget = nullptr;
+    }
+
+    this->m_mouseLeftDown = leftDown;
 }
 
 const Scene& CScene::getScene () const { return *this->getWallpaperData ().as<Scene> (); }

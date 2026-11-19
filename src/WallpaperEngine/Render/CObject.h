@@ -21,6 +21,12 @@ public:
     virtual void setup ();
     virtual void render ();
 
+    /** Hit test against the cursor position in normalized viewport coordinates (top-left origin).
+     *  When provided, localPosition receives the cursor position in object-local coordinates. */
+    [[nodiscard]] virtual bool hitTest (const glm::vec2& normalizedMouse, glm::vec2* localPosition = nullptr) const {
+	return false;
+    }
+
     [[nodiscard]] Wallpapers::CScene& getScene () const;
     [[nodiscard]] const AssetLocator& getAssetLocator () const;
     [[nodiscard]] int getId () const;

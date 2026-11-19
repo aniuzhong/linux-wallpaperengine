@@ -33,6 +33,7 @@ class CScene;
 
 namespace WallpaperEngine::Scripting {
 class ScriptPropertiesObject;
+class ScriptableObject;
 namespace Adapters {
     class ScriptableObjectAdapter;
 }
@@ -46,7 +47,10 @@ class ScriptEngine {
 public:
     struct LoadedModule {
 	DynamicValue& value;
-	JSValue module;
+	JSValue module = JS_UNDEFINED;
+	JSValue thisLayer = JS_UNDEFINED;
+	ScriptableObject* object = nullptr;
+	uint32_t cursorHandlerMask = 0;
     };
     struct JSObjectAdapters {
 	std::unique_ptr<Adapters::VectorAdapter<4>> vec4;
@@ -80,6 +84,13 @@ public:
      * timeouts, intervals AND calls any update() functions.
      */
     void tick ();
+
+    /** Whether any script on this object exports one of the cursor event handlers */
+    [[nodiscard]] bool hasCursorHandler (ScriptableObject& object) const;
+    /** Dispatch a cursor event to every script attached to the object */
+    void dispatchCursorEvent (
+	ScriptableObject& object, const char* name, const glm::vec3& worldPosition, const glm::vec2& localPosition
+    );
 
     // -------------------------------------------------------------------
     // Layer-script API (Phase 2 — dynamic text)
@@ -140,6 +151,7 @@ public:
 
 private:
     JSValue call (JSValue module, int argc, JSValueConst argv[], const char* name);
+    void activateModule (LoadedModule& module);
 
     void installBuiltins ();
 
