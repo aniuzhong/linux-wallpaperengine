@@ -9,9 +9,15 @@ using namespace WallpaperEngine::Scripting;
 JSValue get_cursor_world_position (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     JSClassID classId;
     auto* input = static_cast<InputObject*> (JS_GetAnyOpaque (this_val, &classId));
+    const glm::vec3 position = input->getScene ().getMousePositionWorld ();
 
-    // TODO: PROPERLY IMPLEMENT THIS
-    return input->getScene ().getScriptEngine ().getAdapters ().vec3->instantiate ();
+    JSValue result = input->getScene ().getScriptEngine ().getAdapters ().vec3->instantiate ();
+
+    JS_SetPropertyStr (ctx, result, "x", JS_NewFloat64 (ctx, position.x));
+    JS_SetPropertyStr (ctx, result, "y", JS_NewFloat64 (ctx, position.y));
+    JS_SetPropertyStr (ctx, result, "z", JS_NewFloat64 (ctx, position.z));
+
+    return result;
 }
 
 JSValue get_cursor_screen_position (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {

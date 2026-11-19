@@ -68,6 +68,17 @@ public:
     /** Clamps a parallax offset so a layer covering the shown region cannot be
      * displaced past its own bounds (which would expose the clear color) */
     [[nodiscard]] glm::vec2 clampParallaxOffset (const glm::vec2& offset, const glm::vec2& scaledSize) const;
+    [[nodiscard]] glm::vec3 getMousePositionWorld () const;
+
+    /**
+     * Maps the virtual mouse position (UV space, including any UV crop) to the scene
+     * coordinate space layer origins use. The camera window is what is actually shown,
+     * so cover/fill cropping has to be accounted for or the cursor drifts on that axis.
+     */
+    [[nodiscard]] static glm::vec3 mapMousePositionToWorld (
+	const glm::vec2& mousePosition, float ustart, float uend, float vstart, float vend, float sceneWidth,
+	float sceneHeight, float shownWidth, float shownHeight
+    );
 
 protected:
     void renderFrame (const glm::ivec4& viewport) override;

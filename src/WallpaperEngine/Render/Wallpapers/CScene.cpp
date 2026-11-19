@@ -733,6 +733,38 @@ const glm::vec2* CScene::getMousePositionLast () const { return &this->m_mousePo
 
 const glm::vec2* CScene::getMousePositionNormalized () const { return &this->m_mousePositionNormalized; }
 
+glm::vec3 CScene::mapMousePositionToWorld (
+    const glm::vec2& mousePosition, float ustart, float uend, float vstart, float vend, float sceneWidth,
+    float sceneHeight, float shownWidth, float shownHeight
+) {
+    // Undo the UV crop to recover the viewport fractions, then map them onto the world region the
+    // camera actually shows. Scaling by the authored projection size alone breaks whenever the
+    // camera window is cropped (cover/fill on a non-matching aspect ratio): the cursor would move
+    // faster than the mouse on the cropped axis.
+    const float uRange = uend - ustart;
+    const float vRange = vend - vstart;
+    const float u = uRange != 0.0f ? (mousePosition.x - ustart) / uRange : 0.5f;
+    const float v = vRange != 0.0f ? (mousePosition.y - vstart) / vRange : 0.5f;
+
+    // y keeps the orientation layer origins use for SceneScript (measured from the bottom); only
+    // the visible range is scaled by the camera window.
+    return {
+	sceneWidth / 2.0f + (u - 0.5f) * shownWidth,
+	sceneHeight / 2.0f - (v - 0.5f) * shownHeight,
+	0.0f,
+    };
+}
+
+glm::vec3 CScene::getMousePositionWorld () const {
+    // https://docs.wallpaperengine.io/en/scene/scenescript/reference/class/IInput.html
+    const auto uvs = this->getState ().getTextureUVs ();
+
+    return mapMousePositionToWorld (
+	this->m_mousePosition, uvs.ustart, uvs.uend, uvs.vstart, uvs.vend, static_cast<float> (this->getWidth ()),
+	static_cast<float> (this->getHeight ()), this->m_camera->getWidth (), this->m_camera->getHeight ()
+    );
+}
+
 const glm::vec2* CScene::getParallaxDisplacement () const { return &this->m_parallaxDisplacement; }
 
 const glm::vec2* CScene::getParallaxPosition () const { return &this->m_parallaxPosition; }
