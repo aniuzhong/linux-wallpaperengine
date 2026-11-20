@@ -59,8 +59,18 @@ int audio_read_thread (void* arg) {
     return 0;
 }
 
+static bool audio_stream_stopped (const AudioStream* stream) {
+    return stream->isStopped () || !stream->getAudioContext ().getApplicationContext ().state.general.keepRunning;
+}
+
 static int audio_read_data_callback (void* streamarg, uint8_t* buffer, int buffer_size) {
     const auto stream = static_cast<AudioStream*> (streamarg);
+
+    // A blocked av_read_frame() must be interruptible when the wallpaper stops;
+    // otherwise SDL_WaitThread in ~AudioStream waits forever.
+    if (audio_stream_stopped (stream)) {
+	return AVERROR_EXIT;
+    }
 
     // check if we're at eof and return the right value
     if (stream->getBuffer ()->eof ()) {
@@ -73,12 +83,18 @@ static int audio_read_data_callback (void* streamarg, uint8_t* buffer, int buffe
 	return AVERROR_INVALIDDATA;
     }
 
-    // return read bytes only
-    return stream->getBuffer ()->gcount ();
+    // Returning 0 is invalid for an FFmpeg read callback and was logged as
+    // "Invalid return value 0 for stream protocol". Treat it as EOF.
+    const auto read = stream->getBuffer ()->gcount ();
+    return read > 0 ? static_cast<int> (read) : AVERROR_EOF;
 }
 
 int64_t audio_seek_data_callback (void* streamarg, int64_t offset, int whence) {
     const auto stream = static_cast<AudioStream*> (streamarg);
+
+    if (audio_stream_stopped (stream)) {
+	return AVERROR_EXIT;
+    }
 
     // reset error state
     stream->getBuffer ()->clear ();
@@ -103,7 +119,8 @@ int64_t audio_seek_data_callback (void* streamarg, int64_t offset, int whence) {
 	    break;
     }
 
-    return 0;
+    const auto position = stream->getBuffer ()->tellg ();
+    return position >= 0 ? static_cast<int64_t> (position) : AVERROR (EIO);
 }
 
 AudioStream::AudioStream (AudioContext& context, const std::string& filename) : m_audioContext (context) {
@@ -344,14 +361,16 @@ void AudioStream::initialize () {
     }
 
     this->m_initialized = true;
+    this->m_stopped = false;
 }
+
+bool AudioStream::isStopped () const { return m_stopped.load (); }
 
 void AudioStream::queuePacket (AVPacket* pkt) {
     // clone the packet
     AVPacket* clone = av_packet_alloc ();
 
     if (clone == nullptr) {
-	av_packet_unref (clone);
 	return;
     }
 
@@ -362,7 +381,7 @@ void AudioStream::queuePacket (AVPacket* pkt) {
     SDL_UnlockMutex (this->m_queue->mutex);
 
     if (!gotQueued) {
-	av_packet_free (&pkt);
+	av_packet_free (&clone);
     }
 }
 
@@ -398,7 +417,7 @@ void AudioStream::dequeuePacket () {
 
     SDL_LockMutex (this->m_queue->mutex);
 
-    while (this->m_audioContext.getApplicationContext ().state.general.keepRunning) {
+    while (this->m_audioContext.getApplicationContext ().state.general.keepRunning && !this->m_stopped) {
 #if FF_API_FIFO_OLD_API
 	int ret = -1;
 
@@ -469,6 +488,8 @@ void AudioStream::stop () {
     }
 
     // stop the threads running
+    this->m_audioPacketSize = 0;
+    this->m_stopped = true;
     this->m_initialized = false;
 
     // wake up any thread still waiting on the queue (the audio callback drains
@@ -624,11 +645,12 @@ int AudioStream::resampleAudio (uint8_t* out_buf, const int out_size) {
 }
 
 int AudioStream::decodeFrame (uint8_t* audioBuffer, const int bufferSize) {
-    static int audio_pkt_size = 0;
 
     // block until there's any data in the buffers
-    while (this->m_audioContext.getApplicationContext ().state.general.keepRunning) {
-	while (audio_pkt_size > 0 && this->m_audioContext.getApplicationContext ().state.general.keepRunning) {
+    while (this->m_audioContext.getApplicationContext ().state.general.keepRunning && !this->m_stopped
+	   && this->isInitialized ()) {
+	while (this->m_audioPacketSize > 0 && this->isInitialized ()
+	       && this->m_audioContext.getApplicationContext ().state.general.keepRunning) {
 	    int got_frame = 0;
 	    int ret = avcodec_receive_frame (this->getContext (), this->m_decodeFrame);
 
@@ -647,11 +669,11 @@ int AudioStream::decodeFrame (uint8_t* audioBuffer, const int bufferSize) {
 
 	    if (this->m_decodePacket->size < 0) {
 		// if error, skip frame
-		audio_pkt_size = 0;
+		this->m_audioPacketSize = 0;
 		break;
 	    }
 
-	    audio_pkt_size -= this->m_decodePacket->size;
+	    this->m_audioPacketSize -= this->m_decodePacket->size;
 	    int data_size = 0;
 
 	    if (got_frame) {
@@ -672,7 +694,7 @@ int AudioStream::decodeFrame (uint8_t* audioBuffer, const int bufferSize) {
 
 	this->dequeuePacket ();
 
-	audio_pkt_size = this->m_decodePacket->size;
+	this->m_audioPacketSize = this->m_decodePacket->size;
     }
 
     return 0;
