@@ -215,9 +215,14 @@ JSValue ScriptEngine::dynamicToJs (DynamicValue& value) const {
     }
 }
 
-static void jsToDynamicValue (JSContext* ctx, JSValue val, DynamicValue& source) {
+/**
+ * Convert the value returned by a script into the DynamicValue it drives.
+ *
+ * @return false when the value cannot be converted and the script should be disabled.
+ */
+static bool jsToDynamicValue (JSContext* ctx, JSValue val, DynamicValue& source) {
     if (JS_IsException (val)) {
-	return;
+	return false;
     }
 
     // scalar types returned directly
@@ -225,28 +230,44 @@ static void jsToDynamicValue (JSContext* ctx, JSValue val, DynamicValue& source)
 
     if (tag == JS_TAG_UNDEFINED || tag == JS_TAG_UNINITIALIZED || tag == JS_TAG_NULL) {
 	source.update (DynamicValue::UpdateSource::Script);
-	return;
+	return true;
     }
 
     if (tag == JS_TAG_INT) {
 	source.update (JS_VALUE_GET_INT (val), DynamicValue::UpdateSource::Script);
-	return;
+	return true;
     }
 
     if (tag == JS_TAG_BOOL) {
 	source.update (static_cast<bool> (JS_VALUE_GET_BOOL (val)), DynamicValue::UpdateSource::Script);
+	return true;
     }
 
     if (JS_TAG_IS_FLOAT64 (tag)) {
 	source.update (static_cast<float> (JS_VALUE_GET_FLOAT64 (val)), DynamicValue::UpdateSource::Script);
-	return;
+	return true;
     }
 
     if (tag == JS_TAG_STRING) {
 	const char* str = JS_ToCString (ctx, val);
-	source.update (str == nullptr ? "" : str, DynamicValue::UpdateSource::Script);
+
+	if (str == nullptr) {
+	    // stringification can throw (for example when toString() throws); consume
+	    // the secondary exception so it cannot leak into later script calls
+	    JS_FreeValue (ctx, JS_GetException (ctx));
+	    sLog.error ("ScriptEngine: script returned a string that could not be read");
+	    return false;
+	}
+
+	source.update (str, DynamicValue::UpdateSource::Script);
 	JS_FreeCString (ctx, str);
-	return;
+	return true;
+    }
+
+    // the engine has no job loop, so a promise can never settle
+    if (JS_IsPromise (val)) {
+	sLog.error ("ScriptEngine: async script results are not supported");
+	return false;
     }
 
     // look into the object and extract x/y/z/w properties
@@ -263,7 +284,8 @@ static void jsToDynamicValue (JSContext* ctx, JSValue val, DynamicValue& source)
 	});
 
 	if (!JS_IsNumber (x) || !JS_IsNumber (y)) {
-	    sLog.exception ("Vector's x and y components must be numbers");
+	    sLog.error ("ScriptEngine: Vector's x and y components must be numbers");
+	    return false;
 	}
 
 	double xVal = 0.0f, yVal = 0.0f, zVal = 0.0f, wVal = 0.0f;
@@ -273,16 +295,19 @@ static void jsToDynamicValue (JSContext* ctx, JSValue val, DynamicValue& source)
 
 	if (!JS_IsNumber (z)) {
 	    source.update (glm::vec2 (xVal, yVal), DynamicValue::UpdateSource::Script);
-	    return;
+	    return true;
 	}
 
 	if (!JS_IsNumber (w)) {
 	    source.update (glm::vec3 (xVal, yVal, zVal), DynamicValue::UpdateSource::Script);
-	    return;
+	    return true;
 	}
 
 	source.update (glm::vec4 (xVal, yVal, zVal, wVal), DynamicValue::UpdateSource::Script);
+	return true;
     }
+
+    return false;
 }
 
 ScriptEngine::ScriptEngine (Wallpapers::CScene& scene, Media::MediaSource& mediaSource) :
@@ -396,15 +421,36 @@ ScriptEngine::~ScriptEngine () {
 }
 
 /// Helper to check for and log JS exceptions
+static void logJSValue (JSContext* ctx, const char* context, JSValue value) {
+    // JS_GetException() returns this sentinel when a binding returned
+    // JS_EXCEPTION without actually throwing. Report that instead of
+    // stringifying the internal value as "[uninitialized]".
+    if (JS_IsUninitialized (value)) {
+	sLog.error ("ScriptEngine [", context, "]: exception thrown without a value");
+	return;
+    }
+
+    if (JS_IsNull (value) || JS_IsUndefined (value)) {
+	return;
+    }
+
+    const char* str = JS_ToCString (ctx, value);
+
+    if (str == nullptr) {
+	// stringification can throw (for example when toString() throws); consume
+	// the secondary exception so it cannot leak into later script calls
+	JS_FreeValue (ctx, JS_GetException (ctx));
+	sLog.error ("ScriptEngine [", context, "]: exception could not be converted to a string");
+	return;
+    }
+
+    sLog.error ("ScriptEngine [", context, "]: ", str);
+    JS_FreeCString (ctx, str);
+}
+
 static void logJSException (JSContext* ctx, const char* context) {
     JSValue exc = JS_GetException (ctx);
-    if (!JS_IsNull (exc) && !JS_IsUndefined (exc)) {
-	const char* str = JS_ToCString (ctx, exc);
-	if (str) {
-	    sLog.error ("ScriptEngine [", context, "]: ", str);
-	    JS_FreeCString (ctx, str);
-	}
-    }
+    logJSValue (ctx, context, exc);
     JS_FreeValue (ctx, exc);
 }
 
@@ -678,7 +724,19 @@ JSValue ScriptEngine::call (JSValue module, int argc, JSValue argv[], const char
 	return JS_UNDEFINED;
     }
 
-    return JS_Call (this->m_context, function, module, argc, argv);
+    // Last-resort guard: adapters may throw C++ exceptions from inside a JS
+    // callback. Convert them to JS exceptions so one broken script cannot
+    // terminate the process. Prefer throwing JS exceptions at the callback
+    // boundary; unwinding through the QuickJS C interpreter is not fully safe.
+    try {
+	return JS_Call (this->m_context, function, module, argc, argv);
+    } catch (const std::exception& e) {
+	JS_ThrowInternalError (this->m_context, "%s failed: %s", name, e.what ());
+	return JS_EXCEPTION;
+    } catch (...) {
+	JS_ThrowInternalError (this->m_context, "%s failed with an unknown exception", name);
+	return JS_EXCEPTION;
+    }
 }
 
 void ScriptEngine::activateModule (LoadedModule& module) {
@@ -688,9 +746,18 @@ void ScriptEngine::activateModule (LoadedModule& module) {
     );
 }
 
+void ScriptEngine::disableModule (LoadedModule& module, const std::string& context) {
+    if (module.disabled) {
+	return;
+    }
+
+    module.disabled = true;
+    sLog.error ("ScriptEngine: disabling script after ", context);
+}
+
 bool ScriptEngine::hasCursorHandler (ScriptableObject& object) const {
     for (const auto& module : this->m_scriptModules | std::views::values) {
-	if (module.object == &object && module.cursorHandlerMask != 0) {
+	if (!module.disabled && module.object == &object && module.cursorHandlerMask != 0) {
 	    return true;
 	}
     }
@@ -704,7 +771,7 @@ void ScriptEngine::dispatchCursorEvent (
     const uint32_t handlerBit = cursorHandlerBit (name);
 
     for (auto& module : this->m_scriptModules | std::views::values) {
-	if (module.object != &object || (module.cursorHandlerMask & handlerBit) == 0) {
+	if (module.disabled || module.object != &object || (module.cursorHandlerMask & handlerBit) == 0) {
 	    continue;
 	}
 
@@ -723,7 +790,9 @@ void ScriptEngine::dispatchCursorEvent (
 	JSValue result = this->call (module.module, 1, &event, name);
 
 	if (JS_IsException (result)) {
-	    logJSException (this->m_context, name);
+	    const std::string context = std::string (name) + " " + module.key;
+	    logJSException (this->m_context, context.c_str ());
+	    this->disableModule (module, "cursor handler failure: " + context);
 	}
 
 	JS_FreeValue (this->m_context, result);
@@ -765,17 +834,58 @@ void ScriptEngine::queueScript (const std::string& key, DynamicValue& currentVal
 
     // bind the running module before evaluation: createScriptProperties().finish() runs during
     // the module's top-level code and needs access to the value being scripted
-    LoadedModule temporary { currentValue, JS_UNDEFINED, JS_UNDEFINED, &object };
+    LoadedModule temporary { currentValue, key, JS_UNDEFINED, JS_UNDEFINED, &object };
     this->m_runningModule = &temporary;
 
     // running the compiled module links and executes it, the returned promise fulfills with
     // undefined for modules without top-level await (imports are resolved synchronously here)
-    JSValue evaluation = JS_EvalFunction (this->m_context, compiled);
+    JSValue evaluation = JS_UNDEFINED;
+
+    try {
+	evaluation = JS_EvalFunction (this->m_context, compiled);
+    } catch (const std::exception& e) {
+	// last-resort guard for C++ exceptions escaping the module's top-level code
+	JS_ThrowInternalError (this->m_context, "module %s evaluation failed: %s", key.c_str (), e.what ());
+	evaluation = JS_EXCEPTION;
+    } catch (...) {
+	JS_ThrowInternalError (this->m_context, "module %s evaluation failed with an unknown exception", key.c_str ());
+	evaluation = JS_EXCEPTION;
+    }
 
     if (JS_IsException (evaluation)) {
 	logJSException (this->m_context, ("queueScript.evaluate " + key).c_str ());
 	this->m_runningModule = nullptr;
 	return;
+    }
+
+    if (JS_IsPromise (evaluation)) {
+	const JSPromiseStateEnum promiseState = JS_PromiseState (this->m_context, evaluation);
+
+	if (promiseState == JS_PROMISE_REJECTED) {
+	    JSValue reason = JS_PromiseResult (this->m_context, evaluation);
+
+	    if (JS_IsUndefined (reason)) {
+		sLog.error (
+		    "ScriptEngine [queueScript.topLevel ", key, "]: module top-level code rejected with undefined"
+		);
+	    } else if (JS_IsNull (reason)) {
+		sLog.error ("ScriptEngine [queueScript.topLevel ", key, "]: module top-level code rejected with null");
+	    } else {
+		logJSValue (this->m_context, ("queueScript.topLevel " + key).c_str (), reason);
+	    }
+
+	    JS_FreeValue (this->m_context, reason);
+	    JS_FreeValue (this->m_context, evaluation);
+	    this->m_runningModule = nullptr;
+	    return;
+	}
+
+	if (promiseState == JS_PROMISE_PENDING) {
+	    sLog.error ("ScriptEngine: module ", key, " uses unsupported top-level await; disabled");
+	    JS_FreeValue (this->m_context, evaluation);
+	    this->m_runningModule = nullptr;
+	    return;
+	}
     }
 
     JS_FreeValue (this->m_context, evaluation);
@@ -798,6 +908,7 @@ void ScriptEngine::queueScript (const std::string& key, DynamicValue& currentVal
 	key,
 	LoadedModule {
 	    .value = currentValue,
+	    .key = key,
 	    .module = module,
 	    .object = &object,
 	}
@@ -867,10 +978,20 @@ void ScriptEngine::queueScript (const std::string& key, DynamicValue& currentVal
 	    JS_FreeValue (this->m_context, args[0]);
 	});
 
-	if (JS_IsException (result)) {
+	if (JS_IsException (result) || JS_IsUninitialized (result)) {
 	    logJSException (this->m_context, ("queueScript.init " + key).c_str ());
-	} else if (!JS_IsUndefined (result)) {
-	    jsToDynamicValue (this->m_context, result, currentValue);
+	    this->disableModule (inserted.first->second, "init failure: " + key);
+	    this->m_runningModule = nullptr;
+	    return;
+	}
+
+	if (!JS_IsUndefined (result)) {
+	    if (!jsToDynamicValue (this->m_context, result, currentValue)) {
+		sLog.error ("ScriptEngine: init returned an unsupported value for ", key);
+		this->disableModule (inserted.first->second, "init conversion failure: " + key);
+		this->m_runningModule = nullptr;
+		return;
+	    }
 	}
     }
 
@@ -884,15 +1005,21 @@ void ScriptEngine::queueScript (const std::string& key, DynamicValue& currentVal
 	    JS_FreeValue (this->m_context, args[0]);
 	});
 
-	if (JS_IsException (result)) {
+	if (JS_IsException (result) || JS_IsUninitialized (result)) {
 	    logJSException (this->m_context, ("queueScript.update " + key).c_str ());
+	    this->disableModule (inserted.first->second, "initial update failure: " + key);
 	    this->m_runningModule = nullptr;
 	    return;
 	}
 
 	// modules without an update export evaluate to undefined, keep the parsed value as is
 	if (!JS_IsUndefined (result)) {
-	    jsToDynamicValue (this->m_context, result, currentValue);
+	    if (!jsToDynamicValue (this->m_context, result, currentValue)) {
+		sLog.error ("ScriptEngine: update returned an unsupported value for ", key);
+		this->disableModule (inserted.first->second, "initial update conversion failure: " + key);
+		this->m_runningModule = nullptr;
+		return;
+	    }
 	}
     }
 
@@ -907,6 +1034,10 @@ void ScriptEngine::tick () {
 
     // run all update methods
     for (auto& module : this->m_scriptModules | std::views::values) {
+	if (module.disabled) {
+	    continue;
+	}
+
 	this->activateModule (module);
 
 	JSValue args[] = { this->dynamicToJs (module.value) };
@@ -916,14 +1047,18 @@ void ScriptEngine::tick () {
 	    JS_FreeValue (this->m_context, args[0]);
 	});
 
-	if (JS_IsException (result)) {
-	    logJSException (this->m_context, "tick.update");
+	if (JS_IsException (result) || JS_IsUninitialized (result)) {
+	    logJSException (this->m_context, ("tick.update " + module.key).c_str ());
+	    this->disableModule (module, "update failure: " + module.key);
 	    continue;
 	}
 
 	// modules without an update export evaluate to undefined, keep the parsed value as is
 	if (!JS_IsUndefined (result)) {
-	    jsToDynamicValue (this->m_context, result, module.value);
+	    if (!jsToDynamicValue (this->m_context, result, module.value)) {
+		sLog.error ("ScriptEngine: update returned an unsupported value for ", module.key);
+		this->disableModule (module, "update conversion failure: " + module.key);
+	    }
 	}
     }
 }
@@ -972,16 +1107,33 @@ void ScriptEngine::notifyMediaUpdate (const Media::MediaSource::MediaInfo& media
     JSValue mediaThumbnailArgs[] = { mediaThumbnailEvent };
 
     for (auto& module : this->m_scriptModules | std::views::values) {
-	// call all methods
-	JSValue result1 = this->call (module.module, 1, propertiesArgs, "mediaPropertiesChanged");
-	JSValue result2 = this->call (module.module, 1, playbackArgs, "mediaPlaybackChanged");
-	JSValue result3 = this->call (module.module, 1, mediaTimelineArgs, "mediaTimelineChanged");
-	JSValue result4 = this->call (module.module, 1, mediaThumbnailArgs, "mediaThumbnailChanged");
+	if (module.disabled) {
+	    continue;
+	}
 
-	JS_FreeValue (ctx, result1);
-	JS_FreeValue (ctx, result2);
-	JS_FreeValue (ctx, result3);
-	JS_FreeValue (ctx, result4);
+	bool failed = false;
+
+	const auto dispatch = [&] (const char* handler, JSValue* args) {
+	    JSValue result = this->call (module.module, 1, args, handler);
+
+	    if (JS_IsException (result)) {
+		const std::string context = std::string (handler) + " " + module.key;
+		logJSException (ctx, context.c_str ());
+		failed = true;
+	    }
+
+	    JS_FreeValue (ctx, result);
+	};
+
+	// call all methods
+	dispatch ("mediaPropertiesChanged", propertiesArgs);
+	dispatch ("mediaPlaybackChanged", playbackArgs);
+	dispatch ("mediaTimelineChanged", mediaTimelineArgs);
+	dispatch ("mediaThumbnailChanged", mediaThumbnailArgs);
+
+	if (failed) {
+	    this->disableModule (module, "media handler failure: " + module.key);
+	}
     }
 
     // free all created objects as we don't keep a ref to them anymore
