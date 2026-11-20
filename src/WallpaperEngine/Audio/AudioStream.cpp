@@ -454,7 +454,7 @@ AVFormatContext* AudioStream::getFormatContext () const { return this->m_formatC
 
 int AudioStream::getAudioStream () const { return this->m_audioStream; }
 
-bool AudioStream::isInitialized () const { return this->m_initialized; }
+bool AudioStream::isInitialized () const { return this->m_initialized.load (); }
 
 void AudioStream::setRepeat (const bool newRepeat) { this->m_repeat = newRepeat; }
 
