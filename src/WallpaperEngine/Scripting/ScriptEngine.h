@@ -47,10 +47,13 @@ class ScriptEngine {
 public:
     struct LoadedModule {
 	DynamicValue& value;
+	std::string key;
 	JSValue module = JS_UNDEFINED;
 	JSValue thisLayer = JS_UNDEFINED;
 	ScriptableObject* object = nullptr;
 	uint32_t cursorHandlerMask = 0;
+	/** A failed init/update/media/cursor handler disables the script to avoid repeating the failure every frame */
+	bool disabled = false;
     };
     struct JSObjectAdapters {
 	std::unique_ptr<Adapters::VectorAdapter<4>> vec4;
@@ -152,6 +155,7 @@ public:
 private:
     JSValue call (JSValue module, int argc, JSValueConst argv[], const char* name);
     void activateModule (LoadedModule& module);
+    void disableModule (LoadedModule& module, const std::string& context);
 
     void installBuiltins ();
 
