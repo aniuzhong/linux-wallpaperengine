@@ -662,6 +662,25 @@ void CScene::renderReflection () {
 }
 
 void CScene::updateMouse (const glm::ivec4& viewport) {
+    // With mouse input disabled there is no reliable pointer position; use the
+    // center of the visible UV region so scripts that follow the cursor start
+    // from a neutral pose instead of saturating at a screen corner. Set the
+    // previous position to the same value to avoid a synthetic first-frame
+    // pointer delta (g_PointerPositionLast and cursor-velocity scripts).
+    if (!this->getContext ().getApp ().getContext ().settings.mouse.enabled) {
+	const auto uvs = this->getState ().getTextureUVs ();
+	const glm::vec2 center = {
+	    (uvs.ustart + uvs.uend) * 0.5f,
+	    (uvs.vstart + uvs.vend) * 0.5f,
+	};
+
+	this->m_mousePosition = center;
+	this->m_mousePositionLast = center;
+	this->m_mousePositionNormalized = center;
+	this->m_mousePositionViewport = { 0.5f, 0.5f };
+	return;
+    }
+
     // update virtual mouse position first
     const glm::dvec2 position = this->getContext ().getInputContext ().getMouseInput ().position ();
 
