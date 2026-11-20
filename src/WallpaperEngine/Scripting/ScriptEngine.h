@@ -82,6 +82,9 @@ public:
      */
     void queueScript (const std::string& key, DynamicValue& currentValue, ScriptableObject& object);
 
+    /** Drop every script attached to an object that is about to be destroyed. */
+    void removeScriptsForObject (ScriptableObject& object);
+
     /**
      * Runs a frame tick in the javascript engine. Dispatches any pending events,
      * timeouts, intervals AND calls any update() functions.

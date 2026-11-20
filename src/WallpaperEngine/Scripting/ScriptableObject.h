@@ -21,7 +21,7 @@ public:
     };
 
     ScriptableObject (Wallpapers::CScene& scene, const Object& object);
-    virtual ~ScriptableObject () = default;
+    virtual ~ScriptableObject ();
 
     DynamicValue& getProperty (const std::string& name);
 

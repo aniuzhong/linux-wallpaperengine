@@ -800,6 +800,23 @@ void ScriptEngine::dispatchCursorEvent (
     }
 }
 
+void ScriptEngine::removeScriptsForObject (ScriptableObject& object) {
+    for (auto it = this->m_scriptModules.begin (); it != this->m_scriptModules.end ();) {
+	if (it->second.object != &object) {
+	    ++it;
+	    continue;
+	}
+
+	if (this->m_runningModule == &it->second) {
+	    this->m_runningModule = nullptr;
+	}
+
+	JS_FreeValue (this->m_context, it->second.module);
+	JS_FreeValue (this->m_context, it->second.thisLayer);
+	it = this->m_scriptModules.erase (it);
+    }
+}
+
 void ScriptEngine::queueScript (const std::string& key, DynamicValue& currentValue, ScriptableObject& object) {
     const auto source = currentValue.getScriptSource ();
 
