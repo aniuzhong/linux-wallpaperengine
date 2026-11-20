@@ -27,6 +27,8 @@ DynamicValue& ScriptableObject::getProperty (const std::string& name) {
     return it->second.value;
 }
 
+ScriptableObject::~ScriptableObject () { this->getScene ().getScriptEngine ().removeScriptsForObject (*this); }
+
 const std::map<std::string, ScriptableObject::PropertyEntry>& ScriptableObject::getProperties () const {
     return this->m_properties;
 }
