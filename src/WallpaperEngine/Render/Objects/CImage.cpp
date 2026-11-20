@@ -134,12 +134,19 @@ CImage::CImage (Wallpapers::CScene& scene, const Image& image) :
 
     this->detectTexture ();
 
+    // A zero-sized solid layer is an event/transform parent (e.g. the "Camera
+    // Flash + Audio" container in 3420380809), not a full-screen quad. WE does
+    // not draw it; promoting it to the scene size paints an opaque white layer
+    // over everything that was rendered before it.
+    if (this->m_image.model->solidlayer && size.x == 0.0f && size.y == 0.0f && !this->m_image.model->fullscreen) {
+	this->m_invisibleSolid = true;
+	this->m_size = { 0.0f, 0.0f };
+	this->m_texture = std::make_shared<CFBO> ("", TextureFormat_ARGB8888, TextureFlags_NoFlags, 1, 1, 1, 1, 1);
+	return;
+    }
+
     // detect texture (if any)
     if (this->m_texture == nullptr) {
-	if (this->m_image.model->solidlayer && size.x == 0.0f && size.y == 0.0f) {
-	    size.x = scene_width;
-	    size.y = scene_height;
-	}
 	// if (this->m_image->isSolid ()) // layer receives cursor events:
 	// https://docs.wallpaperengine.io/en/scene/scenescript/reference/event/cursor.html same applies to effects
 	// TODO: create a dummy texture of correct size, fbo constructors should be enough, but this should be properly
@@ -537,6 +544,10 @@ void CImage::setupPuppetGeometryCallback (Effects::CPass* pass) const {
 void CImage::setup () {
     // do not double-init stuff, that's bad!
     if (this->m_initialized) {
+	return;
+    }
+
+    if (this->m_invisibleSolid) {
 	return;
     }
 
