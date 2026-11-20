@@ -58,6 +58,7 @@ public:
 
     [[nodiscard]] const std::vector<CObject*>& getObjectsByRenderOrder () const;
     [[nodiscard]] const CObject* getObject (int id) const;
+    [[nodiscard]] CObject* getObjectByName (const std::string& name) const;
 
     /** Fixed number of light slots WE materials receive (g_LightsPosition/g_LightsColorRadius) */
     static constexpr int kMaxShaderLights = 4;

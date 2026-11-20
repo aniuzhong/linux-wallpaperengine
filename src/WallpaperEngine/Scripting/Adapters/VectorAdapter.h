@@ -18,6 +18,9 @@ public:
     JSValue instantiate (Data::Model::DynamicValue& source, bool temporal);
     JSValue instantiate ();
 
+    /** Look a method up on the shared vector prototype (subtract, normalize, ...). */
+    JSValue getPrototypeProperty (JSContext* ctx, const char* name) const;
+
     void free (uint32_t vectorId);
 
 private:

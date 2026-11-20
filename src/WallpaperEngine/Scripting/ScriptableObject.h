@@ -36,6 +36,11 @@ public:
     void playTextureAnimation ();
     void stopTextureAnimation ();
 
+    /** SceneScript `thisLayer.emitParticles(count)` (particle layers only). */
+    virtual void emitParticles (int count) { }
+    /** SceneScript `thisLayer.play()` (sound layers only). */
+    virtual void playSound () { }
+
 protected:
     void registerProperty (const std::string& name, DynamicValue& value);
 
