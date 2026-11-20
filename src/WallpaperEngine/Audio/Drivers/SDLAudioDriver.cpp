@@ -44,6 +44,11 @@ void audio_callback (void* userdata, uint8_t* streamData, int length) {
 		    // fallback for errors, silence
 		    buffer->audio_buf_size = 1024;
 		    memset (buffer->audio_buf, 0, buffer->audio_buf_size);
+		} else if (audio_size == 0) {
+		    // No packet available (or the stream stopped). The output
+		    // buffer is already zeroed; do not spin on a zero-length
+		    // buffer, which also hangs SDL_CloseAudioDevice.
+		    break;
 		} else {
 		    buffer->audio_buf_size = audio_size;
 		}
@@ -135,7 +140,14 @@ int SDLAudioDriver::addStream (AudioStream* stream) {
 
     return newStreamId;
 }
-void SDLAudioDriver::removeStream (int streamId) { this->m_streams.erase (streamId); }
+void SDLAudioDriver::removeStream (int streamId) {
+    // The audio callback iterates m_streams under this mutex. Erasing without
+    // taking it races with the callback and can leave it mixing a deleted
+    // stream (SIGBUS/SIGSEGV in the SDL audio thread).
+    SDL_LockMutex (this->m_streamListMutex);
+    this->m_streams.erase (streamId);
+    SDL_UnlockMutex (this->m_streamListMutex);
+}
 
 const std::map<int, SDLAudioBuffer*>& SDLAudioDriver::getStreams () { return this->m_streams; }
 

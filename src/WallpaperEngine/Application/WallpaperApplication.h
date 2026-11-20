@@ -50,7 +50,7 @@ public:
     /**
      * Cleans up all the resources used by the application.
      */
-    static void cleanup ();
+    void cleanup ();
     /**
      * Shows the application until it's closed
      */

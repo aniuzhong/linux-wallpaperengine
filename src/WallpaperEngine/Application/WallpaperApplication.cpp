@@ -997,6 +997,11 @@ void WallpaperApplication::render () {
 void WallpaperApplication::cleanup () {
     sLog.out ("Stopping");
 
+    // Signal handlers only set the render-loop stop flag; without flipping the
+    // shared running state the audio read/callback threads keep waiting and
+    // SDL_Quit() deadlocks waiting for the audio callback.
+    this->m_context.state.general.keepRunning = false;
+
 #if DEMOMODE
     close_encoder ();
 #endif /* DEMOMODE */

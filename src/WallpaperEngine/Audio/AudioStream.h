@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <string>
 
 extern "C" {
@@ -75,6 +76,10 @@ public:
      * @return If the audio stream can be played or not
      */
     [[nodiscard]] bool isInitialized () const;
+    /**
+     * @return If the stream has been stopped or not
+     */
+    [[nodiscard]] bool isStopped () const;
     /**
      * @param newRepeat true = repeat, false = no repeat
      */
@@ -163,6 +168,10 @@ private:
     AudioContext& m_audioContext;
     /** If this stream was properly initialized or not */
     bool m_initialized = false;
+    /** Set once stop() is requested; read callbacks use it to abort a blocked
+     *  av_read_frame() during shutdown. Do not use isInitialized() for this:
+     *  the stream is not initialized yet while ffmpeg opens it. */
+    std::atomic<bool> m_stopped = false;
     /** Repeat enabled? */
     bool m_repeat = false;
     /** The codec context that contains the original audio format information */
@@ -180,6 +189,10 @@ private:
 
     /** The packet used while decoding this stream */
     AVPacket* m_decodePacket = nullptr;
+    /** Remaining bytes of the packet currently owned by the decoder.
+     *  This must be per-stream: a static value made concurrent streams consume
+     *  each other's packet accounting and feed invalid packets to FFmpeg. */
+    int m_audioPacketSize = 0;
     /** The AV frame used while decoding this stream */
     AVFrame* m_decodeFrame = nullptr;
 
