@@ -399,11 +399,8 @@ ScriptEngine::~ScriptEngine () {
 
     JS_FreeValue (this->m_context, this->m_globalThis);
 
-    this->m_adapters.vec4.reset ();
-    this->m_adapters.vec3.reset ();
-    this->m_adapters.vec2.reset ();
-    this->m_adapters.object.reset ();
-
+    // These wrappers own JSValues and must release them while the context is
+    // still alive.
     this->m_consoleObject.reset ();
     this->m_engineObject.reset ();
     this->m_inputObject.reset ();
@@ -418,6 +415,18 @@ ScriptEngine::~ScriptEngine () {
     if (this->m_runtime) {
 	JS_FreeRuntime (this->m_runtime);
     }
+
+    // JS_FreeRuntime runs the vector finalizers, which call back into
+    // VectorAdapter::free(). Keep the adapters alive until the runtime is
+    // gone, then mark the context as invalid so their destructors do not
+    // touch freed JSValues.
+    this->m_context = nullptr;
+    this->m_runtime = nullptr;
+
+    this->m_adapters.vec4.reset ();
+    this->m_adapters.vec3.reset ();
+    this->m_adapters.vec2.reset ();
+    this->m_adapters.object.reset ();
 }
 
 /// Helper to check for and log JS exceptions

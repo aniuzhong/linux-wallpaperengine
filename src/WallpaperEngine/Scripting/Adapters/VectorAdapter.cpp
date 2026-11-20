@@ -3,6 +3,7 @@
 #include "../ScriptEngine.h"
 #include "WallpaperEngine/Data/Utils/SFINAE.h"
 #include "WallpaperEngine/Data/Utils/ScopeGuard.h"
+#include "WallpaperEngine/Logging/Log.h"
 
 #include <variant>
 
@@ -111,15 +112,18 @@ template <int components> auto vector_get (JSContext* ctx, JSValue source) -> de
 	JSValue w = JS_GetPropertyStr (ctx, source, "w");
 
 	if (!JS_IsNumber (x) || !JS_IsNumber (y)) {
+	    sLog.error ("VectorAdapter: x/y are not numbers (components=", components, ")");
 	    throw std::runtime_error ("Unsupported type conversion for VectorAdapter");
 	}
 
 	// do not accept bigger vectors
 	if (components <= 2 && JS_IsNumber (z)) {
+	    sLog.error ("VectorAdapter: too many z components (components=", components, ")");
 	    throw std::runtime_error ("Unsupported type conversion for VectorAdapter");
 	}
 
 	if (components <= 3 && JS_IsNumber (w)) {
+	    sLog.error ("VectorAdapter: too many w components (components=", components, ")");
 	    throw std::runtime_error ("Unsupported type conversion for VectorAdapter");
 	}
 
@@ -145,6 +149,7 @@ template <int components> auto vector_get (JSContext* ctx, JSValue source) -> de
 	}
     }
 
+    sLog.error ("VectorAdapter: unsupported type conversion (tag=", tag, " components=", components, ")");
     throw std::runtime_error ("Unsupported type conversion for VectorAdapter");
 }
 
@@ -190,7 +195,11 @@ JSValue vector_property_get (JSContext* ctx, JSValueConst obj_val, JSAtom atom, 
 	}
     }
 
-    return JS_EXCEPTION;
+    // Exotic getters run before the normal prototype lookup, so methods such as
+    // subtract/normalize/copy have to be resolved here explicitly. Returning an
+    // exception used to abort every vector method call with a value-less
+    // exception; returning undefined made the methods appear missing.
+    return container->adapter.getPrototypeProperty (ctx, name);
 }
 
 template JSValue vector_property_get<2> (JSContext* ctx, JSValueConst obj_val, JSAtom atom, JSValueConst receiver);
@@ -370,10 +379,6 @@ template JSValue vector_length<4> (JSContext* ctx, JSValueConst this_val, int ar
 
 template <int components>
 JSValue vector_constructor (JSContext* ctx, JSValueConst new_target, int argc, JSValueConst* argv, int magic) {
-    if (argc == 0) {
-	return JS_EXCEPTION;
-    }
-
     auto it = vectorAdapterInstances<components>.find (magic);
 
     if (it == vectorAdapterInstances<components>.end ()) {
@@ -386,7 +391,54 @@ JSValue vector_constructor (JSContext* ctx, JSValueConst new_target, int argc, J
 
     VEC_MAGIC_CHECK_EXCEPTION (container, components);
 
-    container->value.update (vector_get<components> (ctx, argv[0]), DynamicValue::UpdateSource::Initialization);
+    // WE scripts use all of `new Vec3()`, `new Vec3(x, y, z)` and
+    // `new Vec3(otherVector)`. The single-argument form is handled by
+    // vector_get, the multi-argument form has to be read component-wise.
+    if (argc <= 1) {
+	if (argc == 0) {
+	    container->value.update (vector_new<components> (), DynamicValue::UpdateSource::Initialization);
+	} else {
+	    // vector_get throws for unsupported values (undefined, null, strings...).
+	    // Never let a C++ exception cross the QuickJS C callback boundary: turn it
+	    // into a normal JS TypeError instead.
+	    try {
+		container->value.update (
+		    vector_get<components> (ctx, argv[0]), DynamicValue::UpdateSource::Initialization
+		);
+	    } catch (const std::exception& e) {
+		JS_FreeValue (ctx, result);
+		JS_ThrowTypeError (ctx, "Vec%d: %s", components, e.what ());
+		return JS_EXCEPTION;
+	    } catch (...) {
+		JS_FreeValue (ctx, result);
+		JS_ThrowTypeError (ctx, "Vec%d: unsupported constructor argument", components);
+		return JS_EXCEPTION;
+	    }
+	}
+
+	return result;
+    }
+
+    double values[4] = { 0.0, 0.0, 0.0, 0.0 };
+
+    for (int i = 0; i < components && i < argc; i++) {
+	if (JS_ToFloat64 (ctx, &values[i], argv[i]) < 0) {
+	    JS_FreeValue (ctx, result);
+	    return JS_EXCEPTION;
+	}
+    }
+
+    if constexpr (components == 2) {
+	container->value.update (glm::vec2 (values[0], values[1]), DynamicValue::UpdateSource::Initialization);
+    } else if constexpr (components == 3) {
+	container->value.update (
+	    glm::vec3 (values[0], values[1], values[2]), DynamicValue::UpdateSource::Initialization
+	);
+    } else {
+	container->value.update (
+	    glm::vec4 (values[0], values[1], values[2], values[3]), DynamicValue::UpdateSource::Initialization
+	);
+    }
 
     return result;
 }
@@ -426,8 +478,16 @@ JSValue vector_normalize (JSContext* ctx, JSValueConst this_val, int argc, JSVal
 
     const auto* newContainer = static_cast<VectorOpaqueContainer<components>*> (JS_GetAnyOpaque (newVector, &classId));
 
+    const auto source = vector_get<components> (container->value);
+    const float length = glm::length (source);
+
+    // JavaScript's normalize() on a zero vector must not produce NaN: WE
+    // scripts normalize cursor deltas that are legitimately zero (e.g. when
+    // the cursor sits exactly on the layer origin) and use the components in
+    // arithmetic, which would poison shared state and every origin that
+    // consumes it.
     newContainer->value.update (
-	glm::normalize (vector_get<components> (container->value)), DynamicValue::UpdateSource::Script
+	length > 0.0f ? source / length : decltype (source) (0.0f), DynamicValue::UpdateSource::Script
     );
 
     return newVector;
@@ -924,13 +984,31 @@ VectorAdapter<components>::VectorAdapter (ScriptEngine& engine) :
     );
 
     JS_SetClassProto (this->m_engine.getContext (), this->m_classId, m_prototype);
+
+    // Wallpaper Engine exposes Vec2/Vec3/Vec4 as global constructors; scripts
+    // construct values with `new Vec3(...)`. Without this the constructor was
+    // only reachable through the prototype and every script using it failed
+    // with "ReferenceError: Vec3 is not defined".
+    JSValue global = JS_GetGlobalObject (this->m_engine.getContext ());
+    JS_SetPropertyStr (
+	this->m_engine.getContext (), global, this->m_name.c_str (), JS_DupValue (this->m_engine.getContext (), ctor)
+    );
+    JS_FreeValue (this->m_engine.getContext (), global);
+
     JS_FreeValue (this->m_engine.getContext (), ctor);
 }
 
 template <int components> VectorAdapter<components>::~VectorAdapter () {
     vectorAdapterInstances<components>.erase (this->m_instanceId);
 
-    JS_FreeValue (this->m_engine.getContext (), m_prototype);
+    if (this->m_engine.getContext () != nullptr) {
+	JS_FreeValue (this->m_engine.getContext (), m_prototype);
+    }
+}
+
+template <int components>
+JSValue VectorAdapter<components>::getPrototypeProperty (JSContext* ctx, const char* name) const {
+    return JS_GetPropertyStr (ctx, this->m_prototype, name);
 }
 
 template <int components> JSValue VectorAdapter<components>::instantiate (ScriptableObject& object) {

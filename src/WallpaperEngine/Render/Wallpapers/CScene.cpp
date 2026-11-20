@@ -906,3 +906,16 @@ const CObject* CScene::getObject (int id) const {
     const auto object = this->m_objects.find (id);
     return object == this->m_objects.end () ? nullptr : object->second;
 }
+
+CObject* CScene::getObjectByName (const std::string& name) const {
+    // Layer scripts resolve other layers by name. Render order is not populated
+    // yet while object constructors run their scripts, so search every object
+    // created so far instead of only the draw list.
+    for (const auto& [id, object] : this->m_objects) {
+	if (object != nullptr && object->getObject ().name == name) {
+	    return object;
+	}
+    }
+
+    return nullptr;
+}

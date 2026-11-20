@@ -7,7 +7,8 @@
 
 using namespace WallpaperEngine::Render::Objects;
 
-CSound::CSound (Wallpapers::CScene& scene, const Sound& sound) : CObject (scene, sound), m_sound (sound) {
+CSound::CSound (Wallpapers::CScene& scene, const Sound& sound) :
+    CObject (scene, sound), Scripting::ScriptableObject (scene, sound), m_sound (sound) {
     if (this->getContext ().getApp ().getContext ().settings.audio.enabled) {
 	this->load ();
     }
@@ -43,3 +44,10 @@ void CSound::load () {
 }
 
 void CSound::render () { }
+
+void CSound::playSound () {
+    // Sound streams are registered with the audio driver at load time. The
+    // driver currently mixes every registered stream continuously; explicit
+    // one-shot playback needs a seek/queue reset API that does not exist yet.
+    // Keep this as a no-op so SceneScript does not fail.
+}

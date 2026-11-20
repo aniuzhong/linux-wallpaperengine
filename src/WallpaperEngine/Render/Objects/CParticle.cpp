@@ -234,6 +234,28 @@ void CParticle::render () {
     }
 }
 
+void CParticle::emitParticles (int count) {
+    if (count <= 0 || this->m_particle.emitters.empty ()) {
+	return;
+    }
+
+    // Reuse the authored emitter once with an instantaneous burst. This keeps
+    // the emitted particles consistent with the wallpaper's distribution,
+    // speed and initializers instead of hardcoding a second spawn path.
+    ParticleEmitter emitter = this->m_particle.emitters.front ();
+    emitter.instantaneous = count;
+    emitter.rate = 0.0f;
+    emitter.delay = 0.0f;
+    emitter.duration = 0.0f;
+    emitter.flags = 0;
+
+    if (emitter.name == "boxrandom") {
+	this->createBoxEmitter (emitter) (this->m_particles, this->m_particleCount, 0.0f);
+    } else if (emitter.name == "sphererandom") {
+	this->createSphereEmitter (emitter) (this->m_particles, this->m_particleCount, 0.0f);
+    }
+}
+
 void CParticle::update (float dt) {
     // Detect resolution changes and recalculate transformed origin
     float screenWidth = static_cast<float> (getScene ().getWidth ());

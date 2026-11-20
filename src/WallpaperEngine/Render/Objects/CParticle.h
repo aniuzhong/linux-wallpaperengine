@@ -116,6 +116,9 @@ public:
     void render () override;
     void update (float dt);
 
+    /** SceneScript `thisLayer.emitParticles(count)`. */
+    void emitParticles (int count) override;
+
     [[nodiscard]] const Particle& getParticle () const;
 
     [[nodiscard]] const float& getBrightness () const override;

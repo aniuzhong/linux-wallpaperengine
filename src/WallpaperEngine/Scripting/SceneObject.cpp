@@ -171,17 +171,15 @@ JSValue get_layer (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst
 
 	ScopeGuard guard ([=] { JS_FreeCString (ctx, result); });
 
-	for (auto object : container->getScene ().getObjectsByRenderOrder ()) {
-	    if (object->getObject ().name != result) {
-		continue;
+	if (auto* object = container->getScene ().getObjectByName (result); object != nullptr) {
+	    if (object->is<ScriptableObject> ()) {
+		return container->getEngine ().getAdapters ().object->instantiate (*object->as<ScriptableObject> ());
 	    }
-
-	    if (!object->is<ScriptableObject> ()) {
-		continue;
-	    }
-
-	    return container->getEngine ().getAdapters ().object->instantiate (*object->as<ScriptableObject> ());
 	}
+
+	// A missing optional layer is not a script error. WE scripts commonly do
+	// `let layer = thisScene.getLayer("name"); if (layer) ...`.
+	return JS_UNDEFINED;
     }
 
     return JS_EXCEPTION;
