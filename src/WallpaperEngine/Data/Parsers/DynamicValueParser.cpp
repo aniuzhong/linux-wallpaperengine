@@ -4,10 +4,37 @@
 #include "WallpaperEngine/Data/Model/DynamicValue.h"
 #include "WallpaperEngine/Data/Utils/StringParsing.h"
 
+#include <regex>
+#include <set>
+
 using namespace WallpaperEngine::Data::Parsers;
 using WallpaperEngine::Data::Utils::parseFloat;
 
-DynamicValueUniquePtr DynamicValueParser::parse (const json& data, const Properties& properties, bool expectColor) {
+namespace {
+/**
+ * `addText` script properties are declared only inside the module source. Their
+ * defaults are arbitrary strings, including comma-separated numeric text, which
+ * the generic value parser would otherwise turn into vec2/vec3 values. Collect
+ * the declared names so the script property can stay a JS string.
+ *
+ * Scene parsing only: this is not part of the per-frame path.
+ */
+std::set<std::string> collectAddTextNames (const std::string& source) {
+    static const std::regex pattern (R"(\.addText\s*\(\s*\{[^}]*?\bname\s*:\s*(['"])([^'"]*)\1)", std::regex::optimize);
+
+    std::set<std::string> result;
+
+    for (auto it = std::sregex_iterator (source.begin (), source.end (), pattern); it != std::sregex_iterator ();
+	 ++it) {
+	result.insert ((*it)[2].str ());
+    }
+
+    return result;
+}
+} // namespace
+
+DynamicValueUniquePtr
+DynamicValueParser::parse (const json& data, const Properties& properties, bool expectColor, bool forceString) {
     auto value = std::make_unique<DynamicValue> ();
     auto valueIt = data;
     std::optional<std::string> scriptSource = std::nullopt;
@@ -26,7 +53,9 @@ DynamicValueUniquePtr DynamicValueParser::parse (const json& data, const Propert
 
     // actual value parsing
     if (valueIt.is_string ()) {
-	if (expectColor) {
+	if (forceString) {
+	    value->update (valueIt.get<std::string> (), DynamicValue::UpdateSource::Initialization);
+	} else if (expectColor) {
 	    value->update (Builders::ColorBuilder::parse (valueIt), DynamicValue::UpdateSource::Initialization);
 	} else {
 	    std::string str = valueIt;
@@ -66,8 +95,10 @@ DynamicValueUniquePtr DynamicValueParser::parse (const json& data, const Propert
 	std::map<std::string, UserSettingUniquePtr> scriptProps;
 
 	if (scriptPropsJson.has_value () && scriptPropsJson->is_object ()) {
+	    const auto textNames = collectAddTextNames (*scriptSource);
+
 	    for (const auto& [key, propData] : scriptPropsJson->items ()) {
-		scriptProps[key] = UserSettingParser::parse (propData, properties);
+		scriptProps[key] = UserSettingParser::parse (propData, properties, false, textNames.contains (key));
 	    }
 	}
 
