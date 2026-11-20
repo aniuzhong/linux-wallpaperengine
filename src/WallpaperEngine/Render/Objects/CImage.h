@@ -122,6 +122,8 @@ private:
     glm::vec2 m_size = {};
 
     bool m_initialized = false;
+    /** Zero-sized solid layers are transform/event parents, not visible quads. */
+    bool m_invisibleSolid = false;
 
     struct {
 	struct {
