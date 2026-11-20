@@ -167,7 +167,7 @@ private:
     /** The audio context this stream will be played under */
     AudioContext& m_audioContext;
     /** If this stream was properly initialized or not */
-    bool m_initialized = false;
+    std::atomic<bool> m_initialized = false;
     /** Set once stop() is requested; read callbacks use it to abort a blocked
      *  av_read_frame() during shutdown. Do not use isInitialized() for this:
      *  the stream is not initialized yet while ffmpeg opens it. */
@@ -192,7 +192,7 @@ private:
     /** Remaining bytes of the packet currently owned by the decoder.
      *  This must be per-stream: a static value made concurrent streams consume
      *  each other's packet accounting and feed invalid packets to FFmpeg. */
-    int m_audioPacketSize = 0;
+    std::atomic<int> m_audioPacketSize = 0;
     /** The AV frame used while decoding this stream */
     AVFrame* m_decodeFrame = nullptr;
 
