@@ -32,6 +32,9 @@ public:
      */
     void render (const std::shared_ptr<const CFBO>& destination, const glm::mat4& mirror);
 
+    /** Render into a composition layer's local framebuffer. */
+    void renderLocal (const std::shared_ptr<const CFBO>& destination, float width, float height);
+
     /** Whether any material pass used by this model samples the reflection target */
     [[nodiscard]] bool samplesReflection () const;
     /**
@@ -89,6 +92,9 @@ private:
     glm::mat4 m_viewProjectionMatrix = glm::mat4 (1.0f);
     glm::mat4 m_mvpMatrix = glm::mat4 (1.0f);
     glm::mat4 m_mvpMatrixInverse = glm::mat4 (1.0f);
+    bool m_localCapture = false;
+    float m_localWidth = 0.0f;
+    float m_localHeight = 0.0f;
 
     glm::vec3 m_color = glm::vec3 (1.0f);
     glm::vec4 m_color4 = glm::vec4 (1.0f);

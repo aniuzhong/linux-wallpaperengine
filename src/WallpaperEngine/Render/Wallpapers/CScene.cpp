@@ -595,8 +595,25 @@ void CScene::renderFrame (const glm::ivec4& viewport) {
 	    continue;
 	}
 
+	// text/model children of a capturing composition layer are rendered into
+	// the layer's capture target, not directly into the scene; image children
+	// never have a capturing parent (the layer skips itself instead)
+	if ((cur->is<Objects::CText> () || cur->is<Objects::CModel> ()) && this->isCapturedByCompositionParent (*cur)) {
+	    continue;
+	}
+
 	cur->render ();
     }
+}
+
+bool CScene::isCapturedByCompositionParent (const CObject& object) const {
+    if (!object.getObject ().parent.has_value ()) {
+	return false;
+    }
+
+    const auto* parent = this->getObject (object.getObject ().parent.value ());
+
+    return parent != nullptr && parent->is<Objects::CImage> () && parent->as<Objects::CImage> ()->capturesChildren ();
 }
 
 void CScene::setupReflection () {
@@ -922,6 +939,11 @@ glm::vec2 CScene::clampParallaxOffset (const glm::vec2& offset, const glm::vec2&
 const std::vector<CObject*>& CScene::getObjectsByRenderOrder () const { return this->m_objectsByRenderOrder; }
 
 const CObject* CScene::getObject (int id) const {
+    const auto object = this->m_objects.find (id);
+    return object == this->m_objects.end () ? nullptr : object->second;
+}
+
+CObject* CScene::getObject (int id) {
     const auto object = this->m_objects.find (id);
     return object == this->m_objects.end () ? nullptr : object->second;
 }

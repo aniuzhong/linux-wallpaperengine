@@ -1,6 +1,8 @@
 #include "CImage.h"
 
+#include "CModel.h"
 #include "CRenderable.h"
+#include "CText.h"
 
 #include <algorithm>
 #include <cmath>
@@ -19,7 +21,9 @@
 #include "WallpaperEngine/Data/Parsers/MaterialParser.h"
 #include "WallpaperEngine/Data/Utils/BinaryReader.h"
 #include "WallpaperEngine/Data/Utils/MemoryStream.h"
+#include "WallpaperEngine/Data/Utils/ScopeGuard.h"
 #include "WallpaperEngine/Logging/Log.h"
+#include "WallpaperEngine/Render/Utils/CompositionLayer.h"
 
 using namespace WallpaperEngine;
 using namespace WallpaperEngine::Render::Objects;
@@ -179,6 +183,10 @@ CImage::CImage (Wallpapers::CScene& scene, const Image& image) :
     }
     this->m_size = size;
 
+    // Composition layers capture their direct children in local space so the
+    // layer transform and effects apply to the composite, not to each child.
+    this->resolveCompositionMode ();
+
     glm::vec2 scaledSize = size * glm::vec2 (scale);
 
     // calculate the center and shift from there
@@ -222,6 +230,24 @@ CImage::CImage (Wallpapers::CScene& scene, const Image& image) :
     this->m_currentSubFBO = this->m_subFBO = scene.create (
 	nameB.str (), TextureFormat_ARGB8888, this->m_texture->getFlags (), 1, { size.x, size.y }, { size.x, size.y }
     );
+
+    if (this->m_compositionMode == CompositionMode::Capture && (size.x <= 0.0f || size.y <= 0.0f)) {
+	this->m_compositionMode = CompositionMode::Normal;
+    }
+
+    if (this->m_compositionMode == CompositionMode::Capture) {
+	// TODO(composition-capture): size the capture from the union of the
+	// children's local bounds plus effect padding instead of the authored layer
+	// rectangle, so children that overflow the layer keep rendering into it
+	// (the tint-only skip path avoids that clipping today)
+	std::ostringstream captureName;
+	captureName << "_rt_compositionLayer_" << this->m_image.id;
+	this->m_captureFBO = scene.create (
+	    captureName.str (), TextureFormat_ARGB8888, TextureFlags_ClampUVs, 1, { size.x, size.y }, { size.x, size.y }
+	);
+	// The effect chain samples the captured children as its input texture.
+	this->m_texture = this->m_captureFBO;
+    }
 
     // build a list of vertices, these might need some change later (or maybe invert the camera)
     GLfloat sceneSpacePosition[] = { this->m_pos.x, this->m_pos.y, 0.0f, this->m_pos.x, this->m_pos.w, 0.0f,
@@ -367,6 +393,129 @@ CImage::~CImage () {
     }
     if (this->m_puppetIndices != GL_NONE) {
 	glDeleteBuffers (1, &this->m_puppetIndices);
+    }
+}
+
+void CImage::resolveCompositionMode () {
+    if (!WallpaperEngine::Render::Utils::isCompositionLayer (this->m_image)) {
+	return;
+    }
+
+    // Only homogeneous, capturable child sets are supported; sounds, lights
+    // and cameras do not render and therefore do not disqualify a layer.
+    bool hasTextChildren = false;
+    bool hasModelChildren = false;
+    bool hasImageChildren = false;
+    bool hasUnsupportedRenderableChildren = false;
+
+    for (const auto& child : this->getScene ().getScene ().objects) {
+	if (!child->parent.has_value () || child->parent.value () != this->m_image.id) {
+	    continue;
+	}
+
+	// renderable objects may not exist yet while constructors run, so cache
+	// the ids here and resolve them in captureChildren ()
+	this->m_compositionChildren.push_back (child->id);
+
+	if (child->is<Text> ()) {
+	    hasTextChildren = true;
+	} else if (child->is<ModelObject> ()) {
+	    hasModelChildren = true;
+	} else if (child->is<Image> ()) {
+	    hasImageChildren = true;
+	} else if (child->is<Sound> () || child->is<LightObject> () || child->is<CameraObject> ()) {
+	    // non-rendering objects do not affect the child composite
+	} else {
+	    // particles and unknown objects cannot be rendered into the capture
+	    hasUnsupportedRenderableChildren = true;
+	}
+    }
+
+    const bool homogeneousChildren
+	= !hasUnsupportedRenderableChildren && (hasTextChildren + hasModelChildren + hasImageChildren) == 1;
+
+    if (!homogeneousChildren) {
+	return;
+    }
+
+    const bool hasVisibleEffects = WallpaperEngine::Render::Utils::hasVisibleEffects (this->m_image);
+    const bool tintOnly = WallpaperEngine::Render::Utils::isTintOnlyCompositionLayer (this->m_image);
+
+    if (hasTextChildren) {
+	// A text-only tint layer can keep rendering its children normally: CText
+	// applies the ancestor tint itself, which avoids clipping glyphs that
+	// overflow the authored layer rectangle. Layers that copy the background
+	// still need the normal screen-copy path so the background is tinted too.
+	// A color-blending pass still needs a capture because it has to run on the
+	// children, not on the scene behind them.
+	if (tintOnly) {
+	    if (!this->m_image.copybackground) {
+		this->m_compositionMode = this->m_image.colorBlendMode->value->getInt () > 0
+		    ? CompositionMode::Capture
+		    : CompositionMode::SkipLayer;
+	    }
+	} else if (hasVisibleEffects) {
+	    this->m_compositionMode = CompositionMode::Capture;
+	}
+    } else if (hasModelChildren) {
+	if (hasVisibleEffects) {
+	    this->m_compositionMode = CompositionMode::Capture;
+	}
+    } else if (hasImageChildren) {
+	// Image/puppet capture is not implemented yet. Keep the children visible
+	// and skip the composition layer instead of copying the whole background
+	// through its shake/blur chain.
+	this->m_compositionMode = CompositionMode::SkipLayer;
+    }
+}
+
+void CImage::captureChildren () {
+    if (this->m_captureFBO == nullptr) {
+	return;
+    }
+
+    GLint previousFramebuffer = 0;
+    GLint previousViewport[4] = {};
+    GLboolean previousColorMask[4] = {};
+    GLfloat previousClearColor[4] = {};
+    glGetIntegerv (GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
+    glGetIntegerv (GL_VIEWPORT, previousViewport);
+    glGetBooleanv (GL_COLOR_WRITEMASK, previousColorMask);
+    glGetFloatv (GL_COLOR_CLEAR_VALUE, previousClearColor);
+
+    ScopeGuard restoreState ([&] {
+	glBindFramebuffer (GL_FRAMEBUFFER, previousFramebuffer);
+	glViewport (previousViewport[0], previousViewport[1], previousViewport[2], previousViewport[3]);
+	glColorMask (previousColorMask[0], previousColorMask[1], previousColorMask[2], previousColorMask[3]);
+	glClearColor (previousClearColor[0], previousClearColor[1], previousClearColor[2], previousClearColor[3]);
+    });
+
+    glBindFramebuffer (GL_FRAMEBUFFER, this->m_captureFBO->getFramebuffer ());
+    glViewport (
+	0, 0, static_cast<GLsizei> (this->m_captureFBO->getRealWidth ()),
+	static_cast<GLsizei> (this->m_captureFBO->getRealHeight ())
+    );
+    // A previous image pass may have disabled alpha writes; the captured content
+    // needs its alpha for the composition/effect chain.
+    glColorMask (true, true, true, true);
+
+    glClearColor (0.0f, 0.0f, 0.0f, 0.0f);
+    glClear (GL_COLOR_BUFFER_BIT);
+
+    // every renderable exists once the scene is rendering; children without
+    // one (sounds, disabled particles, ...) are skipped by the null check
+    for (const int childId : this->m_compositionChildren) {
+	auto* renderChild = this->getScene ().getObject (childId);
+
+	if (renderChild == nullptr) {
+	    continue;
+	}
+
+	if (renderChild->is<CText> ()) {
+	    renderChild->as<CText> ()->renderLocal (this->m_size.x, this->m_size.y);
+	} else if (renderChild->is<CModel> ()) {
+	    renderChild->as<CModel> ()->renderLocal (this->m_captureFBO, this->m_size.x, this->m_size.y);
+	}
     }
 }
 
@@ -554,33 +703,35 @@ void CImage::setup () {
     // TODO: CHECK ORDER OF THINGS, 2419444134'S ID 27 DEPENDS ON 104'S COMPOSITE_A WHEN OUR LAST RENDER IS ON
     // COMPOSITE_B
     // TODO: SUPPORT PASSTHROUGH (IT'S A SHADER)
-    if (this->m_image.model->passthrough) {
-	// passthrough images without effects are bad, do not draw them
-	if (this->m_image.effects.empty ()) {
-	    return;
-	}
 
-	// Some have attempted to declare effects with visible set to false.
-	bool allEffectsInvisible = true;
-	for (const auto& cur : this->m_image.effects) {
-	    if (cur->visible->value->getBool ()) {
-		allEffectsInvisible = false;
-		break;
-	    }
-	}
-
-	if (allEffectsInvisible) {
-	    return;
-	}
+    // Layers that render nothing still need a transform so cursor hit-testing
+    // and layer scripts work: skip-mode composition layers and passthrough
+    // images without any visible effect.
+    if (this->m_compositionMode == CompositionMode::SkipLayer
+	|| (this->m_image.model->passthrough && !WallpaperEngine::Render::Utils::hasVisibleEffects (this->m_image))) {
+	this->updateScreenSpacePosition ();
+	this->m_initialized = true;
+	return;
     }
 
     const auto& debug = this->getScene ().getContext ().getApp ().getContext ().settings.render.debug;
+    const bool captureChildren = this->m_compositionMode == CompositionMode::Capture;
 
-    // copy pass to the composite layer
-    for (const auto& cur : this->getImage ().model->material->passes) {
-	this->m_passes.push_back (
-	    new CPass (*this, std::make_shared<FBOProvider> (this), *cur, std::nullopt, std::nullopt, std::nullopt)
-	);
+    // Base passes sample the scene framebuffer. A capture layer starts its
+    // effect chain from the captured children instead, so those passes are not
+    // built at all. Keep their blending mode for the final composite.
+    std::optional<BlendingMode> compositionBlendMode = std::nullopt;
+
+    if (captureChildren && !this->getImage ().model->material->passes.empty ()) {
+	compositionBlendMode = this->getImage ().model->material->passes.front ()->blending;
+    }
+
+    if (!captureChildren) {
+	for (const auto& cur : this->getImage ().model->material->passes) {
+	    this->m_passes.push_back (
+		new CPass (*this, std::make_shared<FBOProvider> (this), *cur, std::nullopt, std::nullopt, std::nullopt)
+	    );
+	}
     }
 
     // prepare the passes list
@@ -720,8 +871,14 @@ void CImage::setup () {
 	));
     }
 
-    // if there's more than one pass the blendmode has to be moved from the beginning to the end
-    if (this->m_passes.size () > 1) {
+    if (captureChildren) {
+	// The captured children are already premultiplied by the child passes;
+	// only the final composite needs the composition layer's blend mode.
+	if (compositionBlendMode.has_value () && !this->m_passes.empty ()) {
+	    this->m_passes.back ()->setBlendingMode (compositionBlendMode.value ());
+	}
+    } else if (this->m_passes.size () > 1) {
+	// if there's more than one pass the blendmode has to be moved from the beginning to the end
 	const auto first = this->m_passes.begin ();
 	const auto last = this->m_passes.rbegin ();
 
@@ -730,6 +887,16 @@ void CImage::setup () {
     }
 
     CRenderable::setup ();
+
+    if (captureChildren) {
+	this->m_captureReady = this->m_captureFBO != nullptr && !this->m_passes.empty ();
+
+	if (this->m_captureReady) {
+	    // The first pass of the effect chain has no scene-copy input of its
+	    // own; feed it the captured children instead.
+	    this->m_passes.front ()->setTextureOverride (0, this->m_captureFBO);
+	}
+    }
 
     this->setupPasses ();
     // initialise the local/clip transform so the first hit test is accurate
@@ -769,6 +936,17 @@ void CImage::setupPasses () {
 	if (isFirstPass && this->m_hasPuppetMesh) {
 	    pass->setBlendingMode (BlendingMode_Translucent);
 	    this->setupPuppetGeometryCallback (pass);
+	}
+
+	if (isFirstPass && this->capturesChildren ()) {
+	    // Composition captures start from a local texture, so the first pass
+	    // must fill the local framebuffer with the clip-space quad. The
+	    // passthrough copy geometry is scene-space and would sample/draw the
+	    // wrong region when the effect chain has more than one pass. The
+	    // final scene pass below still switches back to the scene quad.
+	    spacePosition = this->getPassSpacePosition ();
+	    projection = &this->m_modelViewProjectionPass;
+	    inverseProjection = &this->m_modelViewProjectionPassInverse;
 	}
 
 	pass->setModelMatrix (&this->m_modelMatrix);
@@ -876,7 +1054,7 @@ void CImage::pinpongFramebuffer (std::shared_ptr<const CFBO>* drawTo, std::share
 
 void CImage::render () {
     // do not try to render something that did not initialize successfully
-    if (!this->m_initialized) {
+    if (!this->m_initialized || this->m_compositionMode == CompositionMode::SkipLayer) {
 	return;
     }
 
@@ -885,6 +1063,10 @@ void CImage::render () {
     }
 
     this->updateColor4 ();
+
+    if (this->m_captureReady) {
+	this->captureChildren ();
+    }
 
     glColorMask (true, true, true, true);
 

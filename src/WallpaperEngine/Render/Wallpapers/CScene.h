@@ -58,6 +58,7 @@ public:
 
     [[nodiscard]] const std::vector<CObject*>& getObjectsByRenderOrder () const;
     [[nodiscard]] const CObject* getObject (int id) const;
+    [[nodiscard]] CObject* getObject (int id);
     [[nodiscard]] CObject* getObjectByName (const std::string& name) const;
 
     /** Fixed number of light slots WE materials receive (g_LightsPosition/g_LightsColorRadius) */
@@ -94,6 +95,11 @@ private:
     Render::CObject* createObject (const Object& object);
     Render::CObject* dispatchObjectType (const Object& object);
     void addObjectToRenderOrder (const Object& object);
+    /**
+     * Whether the object's parent is a composition layer that captures its
+     * children, meaning the object must not render into the scene itself.
+     */
+    [[nodiscard]] bool isCapturedByCompositionParent (const CObject& object) const;
     /**
      * Orders translucent 3D model objects back-to-front along the camera's
      * view direction. Opaque models and screen-space layers keep the authored

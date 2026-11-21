@@ -40,6 +40,9 @@ public:
 
     void setDestination (std::shared_ptr<const CFBO> drawTo);
     void setInput (std::shared_ptr<const TextureProvider> input);
+
+    /** Replace the texture bound to a shader texture unit (composition captures). */
+    void setTextureOverride (int index, std::shared_ptr<const TextureProvider> texture);
     void setPreviousInput (std::shared_ptr<const TextureProvider> input);
     void setTexCoord (GLuint texcoord);
     void setPosition (GLuint position);

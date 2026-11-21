@@ -554,6 +554,11 @@ const CRenderable& CPass::getRenderable () const { return this->m_renderable; }
 
 void CPass::setDestination (std::shared_ptr<const CFBO> drawTo) { this->m_drawTo = std::move (drawTo); }
 
+void CPass::setTextureOverride (int index, std::shared_ptr<const TextureProvider> texture) {
+    this->m_textures[index]
+	= std::make_shared<TextureChainEntry> (TextureChainEntry { .texture = std::move (texture), .next = nullptr });
+}
+
 void CPass::setInput (std::shared_ptr<const TextureProvider> input) { this->m_input = std::move (input); }
 
 void CPass::setPreviousInput (std::shared_ptr<const TextureProvider> input) {

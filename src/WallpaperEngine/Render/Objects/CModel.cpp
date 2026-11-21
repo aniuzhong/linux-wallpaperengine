@@ -248,7 +248,36 @@ void CModel::setupSections () {
     }
 }
 
+void CModel::renderLocal (const std::shared_ptr<const CFBO>& destination, float width, float height) {
+    this->m_localCapture = true;
+    this->m_localWidth = width;
+    this->m_localHeight = height;
+    this->render (destination, glm::mat4 (1.0f));
+    this->m_localCapture = false;
+}
+
 void CModel::updateModelMatrix () {
+    if (this->m_localCapture) {
+	const glm::vec3 origin = this->m_model.origin->value->getVec3 ();
+	const glm::vec3 scale = this->m_model.groupScale->value->getVec3 ();
+	const glm::vec3 angles = this->m_model.groupAngles->value->getVec3 ();
+
+	this->m_modelMatrix = glm::mat4 (1.0f);
+	this->m_modelMatrix = glm::translate (
+	    this->m_modelMatrix,
+	    glm::vec3 (this->m_localWidth * 0.5f + origin.x, this->m_localHeight * 0.5f - origin.y, 0.0f)
+	);
+	this->m_modelMatrix = glm::rotate (this->m_modelMatrix, -angles.z, glm::vec3 (0, 0, 1));
+	this->m_modelMatrix = glm::rotate (this->m_modelMatrix, angles.y, glm::vec3 (0, 1, 0));
+	this->m_modelMatrix = glm::rotate (this->m_modelMatrix, -angles.x, glm::vec3 (1, 0, 0));
+	this->m_modelMatrix = glm::scale (this->m_modelMatrix, scale);
+
+	this->m_viewProjectionMatrix = glm::ortho (0.0f, this->m_localWidth, this->m_localHeight, 0.0f, -1.0f, 1.0f);
+	this->m_mvpMatrix = this->m_viewProjectionMatrix * this->m_modelMatrix;
+	this->m_mvpMatrixInverse = glm::inverse (this->m_mvpMatrix);
+	return;
+    }
+
     // models need the full three axis rotation, resolveTransform folds the
     // parent chain but keeps a single z angle, so the local part is recomputed
     // here mirroring CParticle::updateMatrices

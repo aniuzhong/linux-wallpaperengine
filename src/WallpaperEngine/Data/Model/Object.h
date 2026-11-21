@@ -124,6 +124,11 @@ struct ImageData {
     std::vector<ImageEffectUniquePtr> effects;
     /** The animation layers used in the puppet warp */
     std::vector<ImageAnimationLayerUniquePtr> animationLayers;
+    /**
+     * Whether a composition layer should include the scene background in its
+     * effect input. WE omits the field when it is false.
+     */
+    bool copybackground = false;
 };
 
 class Image : public Object, public ImageData {
