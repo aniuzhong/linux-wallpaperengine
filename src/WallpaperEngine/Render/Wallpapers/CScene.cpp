@@ -223,7 +223,10 @@ CScene::CScene (
 			) } } }
 	      ) } };
 
-    // create image for bloom passes
+    // create image for bloom passes. HDR bloom is an additional Ultra-quality
+    // effect in Wallpaper Engine; the normal bloom configured in the scene is
+    // still used by everyone without Ultra post-processing, so it must stay
+    // enabled for HDR scenes as well.
     if (scene->camera.bloom.enabled->value->getBool ()) {
 	this->m_bloomObjectData = ObjectParser::parse (bloom, scene->project);
 	this->m_bloomObject = this->createObject (*this->m_bloomObjectData);

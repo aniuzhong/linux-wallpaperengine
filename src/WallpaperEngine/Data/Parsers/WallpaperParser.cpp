@@ -142,6 +142,12 @@ SceneUniquePtr WallpaperParser::parseScene (const JSON& file, Project& project) 
 	}
     }
 
+    // HDR bloom is an optional scene capability. Only accept a literal
+    // boolean here so a future user-property object cannot make the noexcept
+    // optional<bool> conversion throw.
+    const auto hdrValue = general.find ("hdr");
+    const bool hdrBloom = hdrValue != general.end () && hdrValue->is_boolean () && hdrValue->get<bool> ();
+
     // TODO: FIND IF THESE DEFAULTS ARE SENSIBLE OR NOT AND PERFORM PROPER VALIDATION WHEN CAMERA PREVIEW AND CAMERA
     // PARALLAX ARE PRESENT
 
@@ -162,6 +168,7 @@ SceneUniquePtr WallpaperParser::parseScene (const JSON& file, Project& project) 
                     .enabled = general.user ("bloom", properties, false),
                     .strength = general.user ("bloomstrength", properties, 0.0f),
                     .threshold = general.user ("bloomthreshold", properties, 0.0f),
+                    .hdr = hdrBloom,
                 },
                 .parallax = {
                     .enabled = general.user ("cameraparallax", properties, false),

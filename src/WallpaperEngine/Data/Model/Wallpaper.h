@@ -64,6 +64,14 @@ struct SceneData {
 	    UserSettingUniquePtr strength;
 	    /** Bloom's threshold to pass onto the shader */
 	    UserSettingUniquePtr threshold;
+	    /**
+	     * Enables the additional HDR bloom available with Ultra
+	     * post-processing. This does not replace the normal bloom configured
+	     * through enabled/strength/threshold: Wallpaper Engine keeps normal
+	     * bloom active for users without Ultra post-processing, HDR bloom is
+	     * an extra quality tier on top of it.
+	     */
+	    bool hdr = false;
 	} bloom;
 	/**
 	 * Parallax effect configuration
