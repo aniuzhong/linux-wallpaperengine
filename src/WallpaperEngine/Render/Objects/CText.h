@@ -31,7 +31,7 @@ using namespace WallpaperEngine::Data::Model;
  * texture drawn on a textured quad with its own minimal GLSL shader. Does NOT
  * go through CRenderable / materials / passes. Effects declared on the text
  * itself are not rendered yet; only inherited tint from composition-layer
- * ancestors is approximated in render().
+ * ancestors is approximated in render() and renderLocal().
  *
  * Supports UTF-8 (malformed sequences become U+FFFD), multiline text,
  * embedded/system fonts, scripted/dynamic text and basic line alignment.
@@ -46,6 +46,13 @@ public:
     void setup () override;
     void render () override;
 
+    /**
+     * Render into a composition layer's local framebuffer. Uses the text's own
+     * transform relative to its parent (the composition layer), ignoring the
+     * parent's scale, which is applied when the captured texture is composited.
+     */
+    void renderLocal (float width, float height);
+
 private:
     // Rebuilds the glyph texture (and matching quad VBO) from the given string.
     // Reuses existing GL handles if already allocated, so this is safe to call
@@ -53,6 +60,12 @@ private:
     void rebuildTextureFrom (const std::string& text);
     void buildShader ();
     void uploadQuadVertices ();
+    void draw (const glm::mat4& mvp, const glm::vec4& color);
+
+    /** Updates scripted text, font size and the glyph texture for this frame. */
+    bool prepareFrame ();
+    /** Final vertex color, including composition-layer tint and text alpha. */
+    [[nodiscard]] glm::vec4 resolveDrawColor () const;
 
     // setup() helpers (kept small to keep the setup flow linear).
     bool initFreeType ();

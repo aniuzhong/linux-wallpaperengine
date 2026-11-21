@@ -25,13 +25,31 @@ namespace WallpaperEngine::Render::Objects {
 class CImage final : public CRenderable, public ScriptableObject {
     friend CObject;
 
+private:
+    /**
+     * How a composition layer handles its children: normal screen-copy
+     * behaviour, no rendering at all (children draw themselves, e.g. the
+     * text-only tint shortcut), or capturing the children into a local
+     * texture that the layer's effect chain consumes.
+     */
+    enum class CompositionMode { Normal, SkipLayer, Capture };
+
 public:
     CImage (Wallpapers::CScene& scene, const Image& image);
     ~CImage () override;
 
     void setup () override;
     void render () override;
+
     [[nodiscard]] bool hitTest (const glm::vec2& normalizedMouse, glm::vec2* localPosition = nullptr) const override;
+
+    /**
+     * Whether this composition layer captures its children into the input of
+     * its effect chain, so they are not rendered into the scene directly.
+     */
+    [[nodiscard]] bool capturesChildren () const {
+	return this->m_compositionMode == CompositionMode::Capture && this->m_captureReady;
+    }
 
     [[nodiscard]] const Image& getImage () const;
     [[nodiscard]] glm::vec2 getSize () const;
@@ -67,6 +85,9 @@ private:
     void updateColor4 ();
     void updatePuppetPositionBuffer (const glm::vec2& size);
     void setupPuppetGeometryCallback (Effects::CPass* pass) const;
+    /** Collects the layer's direct children and decides the composition mode */
+    void resolveCompositionMode ();
+    void captureChildren ();
     ResolvedTransform updateGeometryBuffers ();
     [[nodiscard]] glm::vec2 resolveGeometrySize (float sceneWidth, float sceneHeight, glm::vec3& origin) const;
     void updateScenePosition (
@@ -104,6 +125,13 @@ private:
 
     glm::mat4 m_modelMatrix = {};
     glm::mat4 m_viewProjectionMatrix = {};
+
+    CompositionMode m_compositionMode = CompositionMode::Normal;
+    /** True only after setup built a usable capture chain (Capture mode). */
+    bool m_captureReady = false;
+    std::shared_ptr<const CFBO> m_captureFBO = nullptr;
+    /** Data-level ids of the layer's direct children, collected once at construction */
+    std::vector<int> m_compositionChildren = {};
 
     std::shared_ptr<const CFBO> m_mainFBO = nullptr;
     std::shared_ptr<const CFBO> m_subFBO = nullptr;

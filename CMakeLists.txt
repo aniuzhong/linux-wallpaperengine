@@ -436,6 +436,7 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Render/Helpers/ContextAware.cpp
     src/WallpaperEngine/Render/Helpers/ContextAware.h
 
+    src/WallpaperEngine/Render/Utils/CompositionLayer.h
     src/WallpaperEngine/Render/Utils/GLUtils.h
     src/WallpaperEngine/Render/Utils/TextDecoder.cpp
     src/WallpaperEngine/Render/Utils/TextDecoder.h

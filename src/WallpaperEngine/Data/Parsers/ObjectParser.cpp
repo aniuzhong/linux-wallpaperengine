@@ -295,6 +295,7 @@ ObjectParser::parseImage (const JSON& it, const Project& project, ObjectData bas
 	    .effects = effects.has_value () ? parseEffects (*effects, project) : std::vector<ImageEffectUniquePtr> {},
 	    .animationLayers = animationLayers.has_value () ? parseAnimationLayers (*animationLayers, project)
 							    : std::vector<ImageAnimationLayerUniquePtr> {},
+	    .copybackground = it.optional ("copybackground", false),
 	}
     );
 

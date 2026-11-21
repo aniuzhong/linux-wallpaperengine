@@ -16,6 +16,8 @@
 #include "WallpaperEngine/Data/Model/UserSetting.h"
 #include "WallpaperEngine/Logging/Log.h"
 #include "WallpaperEngine/Render/Camera.h"
+#include "WallpaperEngine/Render/Objects/CImage.h"
+#include "WallpaperEngine/Render/Utils/CompositionLayer.h"
 #include "WallpaperEngine/Render/Utils/TextDecoder.h"
 #include "WallpaperEngine/Render/Utils/TextLayout.h"
 #include "WallpaperEngine/Render/Wallpapers/CScene.h"
@@ -57,28 +59,6 @@ void main() {
 }
 )glsl";
 
-bool isTintEffect (const ImageEffect& effect) {
-    if (effect.effect == nullptr) {
-	return false;
-    }
-
-    return std::ranges::any_of (effect.effect->passes, [] (const auto& pass) {
-	return pass->material.has_value ()
-	    && std::ranges::any_of (pass->material.value ()->passes, [] (const auto& materialPass) {
-		   return materialPass->shader.find ("tint") != std::string::npos;
-	       });
-    });
-}
-
-bool isCompositionLayer (const Object& object) {
-    if (!object.is<Image> ()) {
-	return false;
-    }
-
-    const auto* image = object.as<Image> ();
-    return image->model != nullptr && image->model->filename == "models/util/composelayer.json";
-}
-
 // WE only composites child objects into an effect chain for composition layers
 // (https://docs.wallpaperengine.io/en/scene/effects/introduction.html). Ordinary
 // parent effects stay local to their own layer, so only composition layer
@@ -104,7 +84,18 @@ glm::vec3 collectCompositeTint (const Wallpapers::CScene& scene, const Object& o
 	    continue;
 	}
 
-	for (const auto& effect : current->as<Image> ()->effects) {
+	const auto* composition = current->as<Image> ();
+
+	// The effect chain of a capture layer already applies its tint to the
+	// captured text; propagating it here as well would tint twice. Layers
+	// whose children are not captured (the tint-only shortcut, or an
+	// unsupported child mix) rely on this approximation instead.
+	if (const auto* renderedComposition = dynamic_cast<const CImage*> (parentRenderable);
+	    renderedComposition != nullptr && renderedComposition->capturesChildren ()) {
+	    continue;
+	}
+
+	for (const auto& effect : composition->effects) {
 	    if (!effect->visible->value->getBool () || !isTintEffect (*effect)) {
 		continue;
 	    }
@@ -473,19 +464,9 @@ void CText::uploadQuadVertices () {
     glBindVertexArray (0);
 }
 
-void CText::render () {
-    if (!m_valid) {
-	return;
-    }
-    if (!m_text.visible->value->getBool ()) {
-	return;
-    }
-
-#if !NDEBUG
-    std::string str = "Text " + this->getObject ().name + " (" + std::to_string (this->getObject ().id) + ")";
-    glPushDebugGroup (GL_DEBUG_SOURCE_APPLICATION, 0, -1, str.c_str ());
-#endif /* DEBUG */
+bool CText::prepareFrame () {
     std::string renderedText = m_lastRenderedText;
+
     if (m_layerHandle != Scripting::kInvalidLayerHandle) {
 	auto& se = this->getScene ().getScriptEngine ();
 	se.tickLayer (
@@ -497,20 +478,44 @@ void CText::render () {
     }
 
     const unsigned int pixelSize = computeEffectivePixelSize ();
+
     if (pixelSize != m_lastPixelSize) {
 	if (FT_Set_Pixel_Sizes (m_ftFace, 0, static_cast<FT_UInt> (pixelSize)) != 0) {
 	    sLog.error ("CText: FT_Set_Pixel_Sizes failed for object ", m_text.name);
-	    return;
+	    return false;
 	}
+
 	m_lastPixelSize = pixelSize;
 	rebuildTextureFrom (renderedText);
     } else if (renderedText != m_lastRenderedText) {
 	rebuildTextureFrom (renderedText);
     }
 
+    return true;
+}
+
+glm::vec4 CText::resolveDrawColor () const {
     const glm::vec4 color = m_text.color->value->getVec4 ();
     const float alpha = m_text.alpha->value->getFloat ();
     const glm::vec3 propagatedTint = collectCompositeTint (this->getScene (), this->getObject ());
+
+    return { color.r * propagatedTint.r, color.g * propagatedTint.g, color.b * propagatedTint.b, color.a * alpha };
+}
+
+void CText::render () {
+    if (!m_valid || !m_text.visible->value->getBool ()) {
+	return;
+    }
+
+    if (!prepareFrame ()) {
+	return;
+    }
+
+#if !NDEBUG
+    std::string str = "Text " + this->getObject ().name + " (" + std::to_string (this->getObject ().id) + ")";
+    glPushDebugGroup (GL_DEBUG_SOURCE_APPLICATION, 0, -1, str.c_str ());
+#endif /* DEBUG */
+
     const auto transform = this->resolveTransform (this->getObject ());
     const glm::vec3& scale = transform.scale;
     const glm::vec3& origin = transform.origin;
@@ -537,14 +542,46 @@ void CText::render () {
 
     const glm::mat4 mvp = getScene ().getCamera ().getProjection () * getScene ().getCamera ().getLookAt () * model;
 
+    this->draw (mvp, this->resolveDrawColor ());
+
+#if !NDEBUG
+    glPopDebugGroup ();
+#endif /* DEBUG */
+}
+
+void CText::renderLocal (float width, float height) {
+    if (!m_valid || !m_text.visible->value->getBool () || width <= 0.0f || height <= 0.0f) {
+	return;
+    }
+
+    if (!prepareFrame ()) {
+	return;
+    }
+
+    const glm::vec3 localOrigin = m_text.origin->value->getVec3 ();
+    const glm::vec3 localScale = m_text.scale->value->getVec3 ();
+
+    // Capture space: the composition layer's local rectangle. The child's
+    // origin is relative to the layer center and uses the scene's Y-down
+    // convention; the local ortho projection is Y-up because the composited
+    // capture flips V again. As in CText::render, the text's own angle is
+    // ignored; the layer's rotation is applied when the capture is composited.
+    glm::mat4 model = glm::translate (
+	glm::mat4 (1.0f), glm::vec3 (width * 0.5f + localOrigin.x, height * 0.5f - localOrigin.y, 0.0f)
+    );
+    model = glm::scale (model, localScale);
+
+    const glm::mat4 mvp = glm::ortho (0.0f, width, 0.0f, height, -1.0f, 1.0f) * model;
+    this->draw (mvp, this->resolveDrawColor ());
+}
+
+void CText::draw (const glm::mat4& mvp, const glm::vec4& color) {
     glEnable (GL_BLEND);
     glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     glUseProgram (m_program);
     glUniformMatrix4fv (m_uMVP, 1, GL_FALSE, glm::value_ptr (mvp));
-    glUniform4f (
-	m_uColor, color.r * propagatedTint.r, color.g * propagatedTint.g, color.b * propagatedTint.b, color.a * alpha
-    );
+    glUniform4f (m_uColor, color.r, color.g, color.b, color.a);
 
     glActiveTexture (GL_TEXTURE0);
     glBindTexture (GL_TEXTURE_2D, m_texture);
@@ -553,7 +590,4 @@ void CText::render () {
     glBindVertexArray (m_vao);
     glDrawArrays (GL_TRIANGLES, 0, 6);
     glBindVertexArray (0);
-#if !NDEBUG
-    glPopDebugGroup ();
-#endif /* DEBUG */
 }
