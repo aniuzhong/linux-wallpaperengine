@@ -970,8 +970,20 @@ void CImage::setupPasses () {
 		inverseProjection = &this->m_modelViewProjectionPassInverse;
 	    } else {
 		spacePosition = this->getSceneSpacePosition ();
-		projection = &this->m_modelViewProjectionScreen;
-		inverseProjection = &this->m_modelViewProjectionScreenInverse;
+		// Puppet layers without an effect chain of their own hit this path
+		// with their first (base) pass. Their geometry callback still feeds
+		// local-layer mesh vertices, which the scene-space screen MVP would
+		// draw 1:1 at raw mesh coordinates; localToScreen carries the layer
+		// placement (resolveTransform) and camera, mapping the mesh onto the
+		// scene-space quad, matching the transform used by the multi-pass
+		// composite path.
+		if (this->m_hasPuppetMesh && isFirstPass) {
+		    projection = &this->m_localToScreen;
+		    inverseProjection = &this->m_screenToLocal;
+		} else {
+		    projection = &this->m_modelViewProjectionScreen;
+		    inverseProjection = &this->m_modelViewProjectionScreenInverse;
+		}
 	    }
 	}
 
