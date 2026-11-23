@@ -81,6 +81,12 @@ public:
      */
     [[nodiscard]] bool isStopped () const;
     /**
+     * @return If a non-repeating stream reached the end of its file
+     */
+    [[nodiscard]] bool isFinished () const;
+    /** Marks a non-repeating stream as finished (used by the reader thread). */
+    void markFinished ();
+    /**
      * @param newRepeat true = repeat, false = no repeat
      */
     void setRepeat (bool newRepeat = true);
@@ -172,6 +178,8 @@ private:
      *  av_read_frame() during shutdown. Do not use isInitialized() for this:
      *  the stream is not initialized yet while ffmpeg opens it. */
     std::atomic<bool> m_stopped = false;
+    /** Set when a non-repeating stream reaches EOF and its reader exits. */
+    std::atomic<bool> m_finished = false;
     /** Repeat enabled? */
     bool m_repeat = false;
     /** The codec context that contains the original audio format information */

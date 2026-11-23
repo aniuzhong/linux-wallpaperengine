@@ -22,13 +22,23 @@ public:
 
     /** SceneScript `thisLayer.play()` (sound layers). */
     void playSound () override;
+    /** SceneScript `thisLayer.stop()` (sound layers). */
+    void stopSound () override;
+    /** SceneScript `thisLayer.isPlaying()` (sound layers). */
+    [[nodiscard]] bool isSoundPlaying () const override;
 
 protected:
-    void load ();
+    /** Creates and registers one stream per configured sound file. */
+    void createStreams ();
+    /** Unregisters and destroys every active stream. */
+    void clearStreams ();
 
 private:
     std::map<int, Audio::AudioStream*> m_audioStreams = {};
 
     const Sound& m_sound;
+    /** Looping layers start automatically; single-shot layers wait for play(). */
+    bool m_repeat = false;
+    bool m_audioEnabled = false;
 };
 } // namespace WallpaperEngine::Render::Objects

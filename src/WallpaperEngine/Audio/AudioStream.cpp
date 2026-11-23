@@ -33,15 +33,15 @@ int audio_read_thread (void* arg) {
 	ret = av_read_frame (stream->getFormatContext (), packet);
 
 	if (ret == AVERROR_EOF) {
-	    // seek to the beginning of the file again
-	    avformat_seek_file (stream->getFormatContext (), stream->getAudioStream (), 0, 0, 0, ~AVSEEK_FLAG_FRAME);
-	    avcodec_flush_buffers (stream->getContext ());
-
-	    // ensure the thread is not killed if audio has to be looped
-	    if (stream->isRepeat ()) {
-		ret = 0;
+	    if (!stream->isRepeat ()) {
+		stream->markFinished ();
+		continue;
 	    }
 
+	    // seek to the beginning of the file again for looping playback
+	    avformat_seek_file (stream->getFormatContext (), stream->getAudioStream (), 0, 0, 0, ~AVSEEK_FLAG_FRAME);
+	    avcodec_flush_buffers (stream->getContext ());
+	    ret = 0;
 	    continue;
 	}
 
@@ -51,6 +51,12 @@ int audio_read_thread (void* arg) {
 	} else {
 	    av_packet_unref (packet);
 	}
+    }
+
+    // A failed read also leaves a non-repeating stream without data; mark it
+    // finished so a later play() can retry instead of being treated as active.
+    if (!stream->isRepeat ()) {
+	stream->markFinished ();
     }
 
     // stop the audio too just in case
@@ -362,9 +368,14 @@ void AudioStream::initialize () {
 
     this->m_initialized = true;
     this->m_stopped = false;
+    this->m_finished = false;
 }
 
 bool AudioStream::isStopped () const { return m_stopped.load (); }
+
+bool AudioStream::isFinished () const { return m_finished.load (); }
+
+void AudioStream::markFinished () { this->m_finished = true; }
 
 void AudioStream::queuePacket (AVPacket* pkt) {
     // clone the packet
@@ -491,6 +502,7 @@ void AudioStream::stop () {
     this->m_audioPacketSize = 0;
     this->m_stopped = true;
     this->m_initialized = false;
+    this->m_finished = true;
 
     // wake up any thread still waiting on the queue (the audio callback drains
     // it under this mutex, and the reader thread may be sleeping on it too)
