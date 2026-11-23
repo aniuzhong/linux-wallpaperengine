@@ -125,6 +125,12 @@ SDLAudioDriver::~SDLAudioDriver () {
 	SDL_CloseAudioDevice (this->m_deviceID);
     }
 
+    for (const auto* buffer : this->m_streams | std::views::values) {
+	delete buffer;
+    }
+
+    this->m_streams.clear ();
+
     SDL_QuitSubSystem (SDL_INIT_AUDIO);
 }
 
@@ -145,8 +151,17 @@ void SDLAudioDriver::removeStream (int streamId) {
     // taking it races with the callback and can leave it mixing a deleted
     // stream (SIGBUS/SIGSEGV in the SDL audio thread).
     SDL_LockMutex (this->m_streamListMutex);
-    this->m_streams.erase (streamId);
+    SDLAudioBuffer* buffer = nullptr;
+    const auto it = this->m_streams.find (streamId);
+
+    if (it != this->m_streams.end ()) {
+	buffer = it->second;
+	this->m_streams.erase (it);
+    }
+
     SDL_UnlockMutex (this->m_streamListMutex);
+
+    delete buffer;
 }
 
 const std::map<int, SDLAudioBuffer*>& SDLAudioDriver::getStreams () { return this->m_streams; }
