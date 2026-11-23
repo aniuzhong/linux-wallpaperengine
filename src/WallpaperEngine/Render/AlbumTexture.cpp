@@ -73,9 +73,16 @@ void AlbumTexture::copyContents (const TextureProvider& other) const noexcept {
 
     uint8_t* buffer = new uint8_t[bufferSize];
 
-    // Read the source texture
+    // Read the source texture. glGetnTexImage is GL 4.5/ARB_robustness; the
+    // renderer only guarantees a 3.3 core context, so use the plain 3.3
+    // entrypoint when the driver does not expose the robust version.
     glBindTexture (GL_TEXTURE_2D, other.getTextureID (0));
-    glGetnTexImage (GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, bufferSize, buffer);
+
+    if (GLEW_VERSION_4_5) {
+	glGetnTexImage (GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, bufferSize, buffer);
+    } else {
+	glGetTexImage (GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, buffer);
+    }
 
     // Upload into another texture
     glBindTexture (GL_TEXTURE_2D, this->m_textureID);
