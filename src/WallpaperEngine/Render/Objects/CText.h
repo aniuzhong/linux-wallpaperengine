@@ -45,6 +45,7 @@ public:
 
     void setup () override;
     void render () override;
+    [[nodiscard]] bool isVisible () const override;
 
     /**
      * Render into a composition layer's local framebuffer. Uses the text's own

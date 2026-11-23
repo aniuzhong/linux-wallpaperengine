@@ -114,6 +114,7 @@ public:
 
     void setup () override;
     void render () override;
+    [[nodiscard]] bool isVisible () const override;
     void update (float dt);
 
     /** SceneScript `thisLayer.emitParticles(count)`. */

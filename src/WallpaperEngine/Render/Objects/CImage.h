@@ -40,6 +40,7 @@ public:
 
     void setup () override;
     void render () override;
+    [[nodiscard]] bool isVisible () const override;
 
     [[nodiscard]] bool hitTest (const glm::vec2& normalizedMouse, glm::vec2* localPosition = nullptr) const override;
 

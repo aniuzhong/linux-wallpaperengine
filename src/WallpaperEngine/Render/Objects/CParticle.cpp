@@ -125,6 +125,8 @@ CParticle::~CParticle () {
     m_indices.clear ();
 }
 
+bool CParticle::isVisible () const { return this->m_particle.visible->value->getBool (); }
+
 void CParticle::setup () {
     if (m_initialized) {
 	return;

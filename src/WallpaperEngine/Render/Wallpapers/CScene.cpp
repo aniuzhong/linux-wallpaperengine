@@ -590,6 +590,10 @@ void CScene::renderFrame (const glm::ivec4& viewport) {
     glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     for (const auto& cur : this->m_objectsByRenderOrder) {
+	if (!cur->isVisibleInTree ()) {
+	    continue;
+	}
+
 	const auto& debug = this->getContext ().getApp ().getContext ().settings.render.debug;
 	if (debug.objectFilter.has_value () && cur->getId () != debug.objectFilter.value ()) {
 	    continue;
@@ -743,6 +747,10 @@ void CScene::dispatchCursorEvents () {
 
     for (auto it = this->m_objectsByRenderOrder.rbegin (); it != this->m_objectsByRenderOrder.rend (); ++it) {
 	auto* scriptable = dynamic_cast<Scripting::ScriptableObject*> (*it);
+
+	if (!(*it)->isVisibleInTree ()) {
+	    continue;
+	}
 
 	// non-scripted layers cannot receive cursor events, so avoid hit-testing them
 	if (scriptable == nullptr || !this->m_scriptEngine->hasCursorHandler (*scriptable)) {

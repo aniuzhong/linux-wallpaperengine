@@ -134,6 +134,8 @@ const glm::vec4& CModel::getColor4 () const { return this->m_color4; }
 
 const glm::vec3& CModel::getCompositeColor () const { return this->m_color; }
 
+bool CModel::isVisible () const { return this->getObject ().groupVisible->value->getBool (); }
+
 void CModel::setup () {
     // CPass requires a base texture for its g_Texture0 chain, models sample
     // everything through their material passes so a 1x1 white placeholder is

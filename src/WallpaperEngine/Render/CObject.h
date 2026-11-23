@@ -21,6 +21,13 @@ public:
     virtual void setup ();
     virtual void render ();
 
+    /** Whether this object is visible on its own (ignoring its parents). */
+    [[nodiscard]] virtual bool isVisible () const {
+	return this->m_object.groupVisible == nullptr || this->m_object.groupVisible->value->getBool ();
+    }
+    /** Whether this object and every object in its parent chain are visible. */
+    [[nodiscard]] bool isVisibleInTree () const;
+
     /** Hit test against the cursor position in normalized viewport coordinates (top-left origin).
      *  When provided, localPosition receives the cursor position in object-local coordinates. */
     [[nodiscard]] virtual bool hitTest (const glm::vec2& normalizedMouse, glm::vec2* localPosition = nullptr) const {

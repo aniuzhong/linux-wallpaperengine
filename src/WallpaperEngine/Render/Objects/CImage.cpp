@@ -1324,6 +1324,8 @@ void CImage::updateScreenSpacePosition () {
 
 const Image& CImage::getImage () const { return this->m_image; }
 
+bool CImage::isVisible () const { return this->m_image.visible->value->getBool (); }
+
 bool CImage::hitTest (const glm::vec2& normalizedMouse, glm::vec2* localPosition) const {
     if (!this->m_initialized || !this->m_image.visible->value->getBool () || this->getAlpha () <= 0.0f) {
 	return false;

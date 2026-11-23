@@ -21,6 +21,25 @@ CObject::CObject (Wallpapers::CScene& scene, const Object& object) :
 void CObject::setup () { }
 void CObject::render () { }
 
+bool CObject::isVisibleInTree () const {
+    constexpr int kMaxParentDepth = 32;
+    const CObject* current = this;
+
+    for (int depth = 0; current != nullptr && depth < kMaxParentDepth; ++depth) {
+	if (!current->isVisible ()) {
+	    return false;
+	}
+
+	if (!current->m_object.parent.has_value ()) {
+	    return true;
+	}
+
+	current = this->m_scene.getObject (current->m_object.parent.value ());
+    }
+
+    return true;
+}
+
 Wallpapers::CScene& CObject::getScene () const { return this->m_scene; }
 
 const AssetLocator& CObject::getAssetLocator () const { return this->getScene ().getAssetLocator (); }

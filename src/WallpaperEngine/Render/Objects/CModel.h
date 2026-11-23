@@ -25,6 +25,7 @@ public:
 
     void setup () override;
     void render () override;
+    [[nodiscard]] bool isVisible () const override;
     /**
      * Draws the model into an explicit framebuffer, used for the reflection
      * pass: the mirror transform reflects the model over the mirror plane

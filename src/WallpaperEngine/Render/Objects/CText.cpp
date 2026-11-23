@@ -167,6 +167,8 @@ CText::~CText () {
     }
 }
 
+bool CText::isVisible () const { return this->m_text.visible->value->getBool (); }
+
 void CText::setup () {
     const bool scripted = m_text.text->value->getScriptSource ().has_value ();
     const auto& text = m_text.text->value->getString ();
