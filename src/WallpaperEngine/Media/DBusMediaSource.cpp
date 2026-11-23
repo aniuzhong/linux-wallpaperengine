@@ -62,7 +62,11 @@ DBusMediaSource::DBusMediaSource (std::chrono::milliseconds updateInterval) : Me
     this->m_connection = dbus_bus_get (DBUS_BUS_SESSION, &err);
 
     if (!this->m_connection) {
-	sLog.exception ("Could not connect to DBus: ", err.message);
+	// The bus is only needed for MPRIS metadata. Rendering works fine without
+	// it, so do not abort startup in containers or minimal sessions.
+	sLog.error ("Could not connect to DBus: ", err.message, ". Continuing without media information (MPRIS)");
+	dbus_error_free (&err);
+	return;
     }
 
     dbus_connection_add_filter (this->m_connection, dbus_message_filter, this, nullptr);
@@ -79,6 +83,10 @@ DBusMediaSource::DBusMediaSource (std::chrono::milliseconds updateInterval) : Me
 }
 
 DBusMediaSource::~DBusMediaSource () {
+    if (this->m_connection == nullptr) {
+	return;
+    }
+
     dbus_connection_remove_filter (this->m_connection, dbus_message_filter, this);
 
     dbus_connection_unref (this->m_connection);
@@ -218,6 +226,10 @@ void DBusMediaSource::parsePosition (DBusMessageIter& variant) {
 }
 
 void DBusMediaSource::update () {
+    if (this->m_connection == nullptr) {
+	return;
+    }
+
     this->MediaSource::update ();
 
     // drain any dbus events
@@ -231,6 +243,10 @@ DBusMessage* DBusMediaSource::dbusMessage (
     const char* bus_name, const char* path, const char* interface, const char* method, const char* iface,
     const char* prop
 ) {
+    if (this->m_connection == nullptr) {
+	return nullptr;
+    }
+
     DBusError err;
     dbus_error_init (&err);
 

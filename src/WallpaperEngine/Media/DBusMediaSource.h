@@ -27,6 +27,7 @@ protected:
 
     std::optional<std::string> m_currentPlayer = std::nullopt;
 
-    DBusConnection* m_connection;
+    /** Session bus connection, or nullptr when MPRIS is unavailable */
+    DBusConnection* m_connection = nullptr;
 };
 }
