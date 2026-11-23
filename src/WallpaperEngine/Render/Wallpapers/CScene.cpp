@@ -973,3 +973,85 @@ CObject* CScene::getObjectByName (const std::string& name) const {
 
     return nullptr;
 }
+
+CObject* CScene::createLayerFromAsset (const std::string& asset) {
+    if (asset.empty ()) {
+	return nullptr;
+    }
+
+    const int id = this->m_nextDynamicObjectId--;
+    const bool isParticle = asset.rfind ("particles/", 0) == 0;
+    JSON layer = {
+	{ "id", id },          { "name", "dynamic_" + std::to_string (id) },
+	{ "origin", "0 0 0" }, { "scale", "1 1 1" },
+	{ "angles", "0 0 0" }, { "visible", true },
+    };
+
+    layer[isParticle ? "particle" : "image"] = asset;
+
+    try {
+	auto data = ObjectParser::parse (layer, this->getScene ().project);
+	auto* object = this->createObject (*data);
+
+	if (object == nullptr) {
+	    return nullptr;
+	}
+
+	this->addObjectToRenderOrder (*data);
+	this->m_dynamicObjects.emplace (id, std::move (data));
+
+	return object;
+    } catch (const std::exception& e) {
+	sLog.error ("Cannot create layer from asset ", asset, ": ", e.what ());
+	return nullptr;
+    }
+}
+
+bool CScene::destroyLayer (CObject* object) {
+    if (object == nullptr) {
+	return false;
+    }
+
+    const int id = object->getId ();
+
+    if (this->m_dynamicObjects.find (id) == this->m_dynamicObjects.end ()) {
+	return false;
+    }
+
+    if (this->m_cursorTarget == object) {
+	this->m_cursorTarget = nullptr;
+    }
+    if (this->m_cursorPressTarget == object) {
+	this->m_cursorPressTarget = nullptr;
+    }
+
+    this->m_objects.erase (id);
+
+    const auto renderIt = std::ranges::find (this->m_objectsByRenderOrder, object);
+    if (renderIt != this->m_objectsByRenderOrder.end ()) {
+	this->m_objectsByRenderOrder.erase (renderIt);
+    }
+
+    delete object;
+    this->m_dynamicObjects.erase (id);
+
+    return true;
+}
+
+void CScene::sortLayer (CObject* object, int index) {
+    if (object == nullptr) {
+	return;
+    }
+
+    const auto current = std::ranges::find (this->m_objectsByRenderOrder, object);
+
+    if (current == this->m_objectsByRenderOrder.end ()) {
+	return;
+    }
+
+    this->m_objectsByRenderOrder.erase (current);
+
+    const auto size = static_cast<int> (this->m_objectsByRenderOrder.size ());
+    index = std::clamp (index, 0, size);
+    this->m_objectsByRenderOrder.insert (this->m_objectsByRenderOrder.begin () + index, object);
+}

@@ -233,6 +233,89 @@ JSValue get_layer_index (JSContext* ctx, JSValueConst this_val, int argc, JSValu
     return JS_NewInt32 (ctx, -1);
 }
 
+WallpaperEngine::Render::CObject*
+resolve_layer (WallpaperEngine::Render::Wallpapers::CScene& scene, JSContext* ctx, JSValueConst value) {
+    if (JS_IsNumber (value)) {
+	int id = 0;
+
+	JS_ToInt32 (ctx, &id, value);
+
+	return scene.getObject (id);
+    }
+
+    if (JS_IsString (value)) {
+	const char* name = JS_ToCString (ctx, value);
+
+	if (name == nullptr) {
+	    return nullptr;
+	}
+
+	auto* object = scene.getObjectByName (name);
+
+	JS_FreeCString (ctx, name);
+
+	return object;
+    }
+
+    if (JS_IsObject (value)) {
+	return WallpaperEngine::Scripting::Adapters::ScriptableObjectAdapter::getObject (value);
+    }
+
+    return nullptr;
+}
+
+JSValue create_layer (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc != 1 || !JS_IsString (argv[0])) {
+	return JS_EXCEPTION;
+    }
+
+    auto* container = get_opaque (this_val);
+    const char* asset = JS_ToCString (ctx, argv[0]);
+
+    if (asset == nullptr) {
+	return JS_EXCEPTION;
+    }
+
+    auto* object = container->getScene ().createLayerFromAsset (asset);
+
+    JS_FreeCString (ctx, asset);
+
+    if (object == nullptr || !object->is<ScriptableObject> ()) {
+	return JS_UNDEFINED;
+    }
+
+    return container->getEngine ().getAdapters ().object->instantiate (*object->as<ScriptableObject> ());
+}
+
+JSValue destroy_layer (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc != 1) {
+	return JS_EXCEPTION;
+    }
+
+    auto* container = get_opaque (this_val);
+    auto* object = resolve_layer (container->getScene (), ctx, argv[0]);
+
+    return JS_NewBool (ctx, container->getScene ().destroyLayer (object));
+}
+
+JSValue sort_layer (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc != 2 || !JS_IsNumber (argv[1])) {
+	return JS_EXCEPTION;
+    }
+
+    auto* container = get_opaque (this_val);
+    auto* object = resolve_layer (container->getScene (), ctx, argv[0]);
+    int index = 0;
+
+    JS_ToInt32 (ctx, &index, argv[1]);
+
+    if (object != nullptr) {
+	container->getScene ().sortLayer (object, index);
+    }
+
+    return JS_UNDEFINED;
+}
+
 JSValue scene_set_value (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) { return JS_EXCEPTION; }
 
 SceneObject::SceneObject (ScriptEngine& engine, Render::Wallpapers::CScene& scene) :
@@ -353,6 +436,18 @@ SceneObject::SceneObject (ScriptEngine& engine, Render::Wallpapers::CScene& scen
     JS_DefinePropertyValueStr (
 	this->m_engine.getContext (), this->m_instance, "getLayerIndex",
 	JS_NewCFunction (this->m_engine.getContext (), get_layer_index, "getLayerIndex", 1), JS_PROP_ENUMERABLE
+    );
+    JS_DefinePropertyValueStr (
+	this->m_engine.getContext (), this->m_instance, "createLayer",
+	JS_NewCFunction (this->m_engine.getContext (), create_layer, "createLayer", 1), JS_PROP_ENUMERABLE
+    );
+    JS_DefinePropertyValueStr (
+	this->m_engine.getContext (), this->m_instance, "destroyLayer",
+	JS_NewCFunction (this->m_engine.getContext (), destroy_layer, "destroyLayer", 1), JS_PROP_ENUMERABLE
+    );
+    JS_DefinePropertyValueStr (
+	this->m_engine.getContext (), this->m_instance, "sortLayer",
+	JS_NewCFunction (this->m_engine.getContext (), sort_layer, "sortLayer", 2), JS_PROP_ENUMERABLE
     );
     // TODO: ADD REST OF THE METHODS
 }

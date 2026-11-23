@@ -49,6 +49,32 @@ JSValue scriptableobject_property_get (JSContext* ctx, JSValueConst obj_val, JSA
     }
 }
 
+int scriptableobject_property_set (
+    JSContext* ctx, JSValueConst obj_val, JSAtom atom, JSValueConst val, JSValueConst receiver, int flags
+) {
+    JSClassID classId = 0;
+    auto* container = static_cast<OpaqueScriptableObjectAdapter*> (JS_GetAnyOpaque (obj_val, &classId));
+
+    if (!container || container->magic != SCRIPTABLE_OPAQUE_MAGIC) {
+	return 0;
+    }
+
+    const char* name = JS_AtomToCString (ctx, atom);
+
+    if (name == nullptr) {
+	return 0;
+    }
+
+    ScopeGuard guard ([=] { JS_FreeCString (ctx, name); });
+
+    try {
+	auto& property = container->object.getProperty (name);
+	container->adapter.getEngine ().writeJsValue (ctx, val, property);
+    } catch (const std::exception&) { }
+
+    return 0;
+}
+
 WallpaperEngine::Scripting::ScriptableObject* ScriptableObjectAdapter::getObject (JSValueConst value) {
     JSClassID classId = 0;
     auto* container = static_cast<OpaqueScriptableObjectAdapter*> (JS_GetAnyOpaque (value, &classId));
@@ -91,6 +117,7 @@ ScriptableObjectAdapter::ScriptableObjectAdapter (ScriptEngine& engine, std::str
     ObjectAdapter (engine), m_exoticMethods (
 				{
 				    .get_property = scriptableobject_property_get,
+				    .set_property = scriptableobject_property_set,
 				}
 			    ),
     m_name (std::move (name)) {

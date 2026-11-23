@@ -61,6 +61,10 @@ public:
     [[nodiscard]] CObject* getObject (int id);
     [[nodiscard]] CObject* getObjectByName (const std::string& name) const;
 
+    CObject* createLayerFromAsset (const std::string& asset);
+    bool destroyLayer (CObject* object);
+    void sortLayer (CObject* object, int index);
+
     /** Fixed number of light slots WE materials receive (g_LightsPosition/g_LightsColorRadius) */
     static constexpr int kMaxShaderLights = 4;
 
@@ -130,6 +134,8 @@ private:
     glm::vec2 m_texelSizeHalf = {};
     ObjectUniquePtr m_bloomObjectData;
     CObject* m_bloomObject = nullptr;
+    std::map<int, ObjectUniquePtr> m_dynamicObjects = {};
+    int m_nextDynamicObjectId = -100000;
     /** Shader light state, refreshed each frame from the scene's light objects */
     std::array<glm::vec3, kMaxShaderLights> m_lightPositions = {};
     std::array<glm::vec4, kMaxShaderLights> m_lightColorsRadius = {};

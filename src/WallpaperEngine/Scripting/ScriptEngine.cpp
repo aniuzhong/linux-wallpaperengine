@@ -310,6 +310,10 @@ static bool jsToDynamicValue (JSContext* ctx, JSValue val, DynamicValue& source)
     return false;
 }
 
+bool ScriptEngine::writeJsValue (JSContext* ctx, JSValue value, DynamicValue& source) {
+    return jsToDynamicValue (ctx, value, source);
+}
+
 ScriptEngine::ScriptEngine (Wallpapers::CScene& scene, Media::MediaSource& mediaSource) :
     m_scene (scene), m_mediaSource (mediaSource) {
     this->m_unregisterMediaUpdateCallback
