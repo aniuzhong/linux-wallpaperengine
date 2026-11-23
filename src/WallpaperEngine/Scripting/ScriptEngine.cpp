@@ -205,11 +205,11 @@ JSValue ScriptEngine::dynamicToJs (DynamicValue& value) const {
 	case DynamicValue::Boolean:
 	    return JS_NewBool (this->m_context, value.getBool ());
 	case DynamicValue::Vec2:
-	    return this->m_adapters.vec2->instantiate (value);
+	    return this->m_adapters.vec2->instantiate (value, true);
 	case DynamicValue::Vec3:
-	    return this->m_adapters.vec3->instantiate (value);
+	    return this->m_adapters.vec3->instantiate (value, true);
 	case DynamicValue::Vec4:
-	    return this->m_adapters.vec4->instantiate (value);
+	    return this->m_adapters.vec4->instantiate (value, true);
 	default:
 	    return JS_UNDEFINED;
     }
