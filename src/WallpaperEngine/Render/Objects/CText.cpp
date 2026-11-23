@@ -477,6 +477,12 @@ bool CText::prepareFrame () {
 	);
 	const std::string current = se.layerText (m_layerHandle);
 	renderedText = current.empty () ? std::string (" ") : current;
+    } else {
+	renderedText = m_text.text->value->getString ();
+
+	if (renderedText.empty ()) {
+	    renderedText = " ";
+	}
     }
 
     const unsigned int pixelSize = computeEffectivePixelSize ();
@@ -502,6 +508,24 @@ glm::vec4 CText::resolveDrawColor () const {
     const glm::vec3 propagatedTint = collectCompositeTint (this->getScene (), this->getObject ());
 
     return { color.r * propagatedTint.r, color.g * propagatedTint.g, color.b * propagatedTint.b, color.a * alpha };
+}
+
+glm::vec3 CText::anchorOffset (const glm::vec3& scale, bool topIsPositive) const {
+    glm::vec3 result = { 0.0f, 0.0f, 0.0f };
+
+    if (m_text.anchor.find ("left") != std::string::npos) {
+	result.x += m_quadSize.x * scale.x * 0.5f;
+    } else if (m_text.anchor.find ("right") != std::string::npos) {
+	result.x -= m_quadSize.x * scale.x * 0.5f;
+    }
+
+    if (m_text.anchor.find ("top") != std::string::npos) {
+	result.y += (topIsPositive ? 1.0f : -1.0f) * m_quadSize.y * scale.y * 0.5f;
+    } else if (m_text.anchor.find ("bottom") != std::string::npos) {
+	result.y += (topIsPositive ? -1.0f : 1.0f) * m_quadSize.y * scale.y * 0.5f;
+    }
+
+    return result;
 }
 
 void CText::render () {
@@ -534,12 +558,14 @@ void CText::render () {
 	origin.z,
     };
 
+    // The anchor point stays on the origin; the box is offset from it and
+    // rotates with the object. Rotate by the parent-chain accumulated angle,
+    // negated like CImage/CParticle to compensate the Y-flipped coordinate system.
     glm::mat4 model = glm::translate (glm::mat4 (1.0f), gl_origin);
-    // Rotate around the text's own origin by the parent-chain accumulated angle.
-    // Negated like CImage/CParticle to compensate the Y-flipped coordinate system.
     if (transform.angle != 0.0f) {
 	model = glm::rotate (model, -transform.angle, glm::vec3 (0.0f, 0.0f, 1.0f));
     }
+    model = glm::translate (model, this->anchorOffset (scale, true));
     model = glm::scale (model, scale);
 
     const glm::mat4 mvp = getScene ().getCamera ().getProjection () * getScene ().getCamera ().getLookAt () * model;
@@ -562,15 +588,15 @@ void CText::renderLocal (float width, float height) {
 
     const glm::vec3 localOrigin = m_text.origin->value->getVec3 ();
     const glm::vec3 localScale = m_text.scale->value->getVec3 ();
+    const glm::vec3 localAnchor = { width * 0.5f + localOrigin.x, height * 0.5f - localOrigin.y, 0.0f };
 
     // Capture space: the composition layer's local rectangle. The child's
     // origin is relative to the layer center and uses the scene's Y-down
     // convention; the local ortho projection is Y-up because the composited
     // capture flips V again. As in CText::render, the text's own angle is
     // ignored; the layer's rotation is applied when the capture is composited.
-    glm::mat4 model = glm::translate (
-	glm::mat4 (1.0f), glm::vec3 (width * 0.5f + localOrigin.x, height * 0.5f - localOrigin.y, 0.0f)
-    );
+    glm::mat4 model = glm::translate (glm::mat4 (1.0f), localAnchor);
+    model = glm::translate (model, this->anchorOffset (localScale, false));
     model = glm::scale (model, localScale);
 
     const glm::mat4 mvp = glm::ortho (0.0f, width, 0.0f, height, -1.0f, 1.0f) * model;

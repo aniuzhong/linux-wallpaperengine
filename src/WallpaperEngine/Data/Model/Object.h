@@ -683,6 +683,8 @@ struct TextData {
     std::string alignment;
     /** Vertical alignment: "top", "center", "bottom" */
     std::string verticalalign;
+    /** Anchor point of the authored box: e.g. "center", "top", "topright" */
+    std::string anchor;
     /** Padding inside the bounding box (x, y). WE writes this either as a "x y" string or as a
      *  bare scalar meaning both axes; JsonExtensions::get<vec> accepts both forms. */
     glm::vec2 padding;

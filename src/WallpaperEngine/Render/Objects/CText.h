@@ -34,9 +34,9 @@ using namespace WallpaperEngine::Data::Model;
  * ancestors is approximated in render() and renderLocal().
  *
  * Supports UTF-8 (malformed sequences become U+FFFD), multiline text,
- * embedded/system fonts, scripted/dynamic text and basic line alignment.
- * Wrapping, authored-box placement/padding and per-glyph font fallback are not
- * implemented yet.
+ * embedded/system fonts, scripted/dynamic text, basic line alignment and
+ * anchor-based placement. Wrapping, the authored size/padding box and per-glyph
+ * font fallback are not implemented yet.
  */
 class CText final : virtual public CObject, public Scripting::ScriptableObject {
 public:
@@ -67,6 +67,11 @@ private:
     bool prepareFrame ();
     /** Final vertex color, including composition-layer tint and text alpha. */
     [[nodiscard]] glm::vec4 resolveDrawColor () const;
+    /**
+     * Offset from the text center to the authored anchor point.
+     * topIsPositive is false in capture space, where the composited result flips Y.
+     */
+    [[nodiscard]] glm::vec3 anchorOffset (const glm::vec3& scale, bool topIsPositive) const;
 
     // setup() helpers (kept small to keep the setup flow linear).
     bool initFreeType ();

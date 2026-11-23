@@ -269,6 +269,7 @@ TextUniquePtr ObjectParser::parseText (const JSON& it, const Project& project, O
 	    .visible = it.user ("visible", project.properties, true),
 	    .alignment = it.optional ("horizontalalign", it.optional ("alignment", std::string ("center"))),
 	    .verticalalign = it.optional ("verticalalign", std::string ("center")),
+	    .anchor = it.optional ("anchor", std::string ()),
 	    .padding = it.optional ("padding", glm::vec2 (0.0f)),
 	}
     );
