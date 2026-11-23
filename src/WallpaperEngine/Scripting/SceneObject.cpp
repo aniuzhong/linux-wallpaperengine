@@ -6,6 +6,8 @@
 #include "WallpaperEngine/Data/Utils/ScopeGuard.h"
 #include "WallpaperEngine/Render/Wallpapers/CScene.h"
 
+#include <string>
+
 using namespace WallpaperEngine::Scripting;
 
 SceneObject* get_opaque (JSValueConst this_val) {
@@ -185,6 +187,52 @@ JSValue get_layer (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst
     return JS_EXCEPTION;
 }
 
+JSValue get_layer_index (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc != 1) {
+	return JS_EXCEPTION;
+    }
+
+    auto* container = get_opaque (this_val);
+    const auto& objects = container->getScene ().getObjectsByRenderOrder ();
+    int id = -1;
+    std::string name;
+    bool hasName = false;
+
+    if (JS_IsNumber (argv[0])) {
+	JS_ToInt32 (ctx, &id, argv[0]);
+    } else if (JS_IsString (argv[0])) {
+	const char* value = JS_ToCString (ctx, argv[0]);
+
+	if (value == nullptr) {
+	    return JS_EXCEPTION;
+	}
+
+	name = value;
+	hasName = true;
+	JS_FreeCString (ctx, value);
+    } else if (JS_IsObject (argv[0])) {
+	auto* object = WallpaperEngine::Scripting::Adapters::ScriptableObjectAdapter::getObject (argv[0]);
+
+	if (object != nullptr) {
+	    id = object->getId ();
+	}
+    } else {
+	return JS_EXCEPTION;
+    }
+
+    for (size_t i = 0; i < objects.size (); ++i) {
+	if (objects[i] == nullptr) {
+	    continue;
+	}
+
+	if ((id >= 0 && objects[i]->getId () == id) || (hasName && objects[i]->getObject ().name == name)) {
+	    return JS_NewInt32 (ctx, static_cast<int32_t> (i));
+	}
+    }
+
+    return JS_NewInt32 (ctx, -1);
+}
+
 JSValue scene_set_value (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) { return JS_EXCEPTION; }
 
 SceneObject::SceneObject (ScriptEngine& engine, Render::Wallpapers::CScene& scene) :
@@ -301,6 +349,10 @@ SceneObject::SceneObject (ScriptEngine& engine, Render::Wallpapers::CScene& scen
     JS_DefinePropertyValueStr (
 	this->m_engine.getContext (), this->m_instance, "getLayer",
 	JS_NewCFunction (this->m_engine.getContext (), get_layer, "getLayer", 1), JS_PROP_ENUMERABLE
+    );
+    JS_DefinePropertyValueStr (
+	this->m_engine.getContext (), this->m_instance, "getLayerIndex",
+	JS_NewCFunction (this->m_engine.getContext (), get_layer_index, "getLayerIndex", 1), JS_PROP_ENUMERABLE
     );
     // TODO: ADD REST OF THE METHODS
 }
