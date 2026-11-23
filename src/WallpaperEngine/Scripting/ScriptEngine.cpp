@@ -8,6 +8,7 @@
 #include "ScriptableObject.h"
 #include "WallpaperEngine/Audio/AudioContext.h"
 #include "WallpaperEngine/Audio/Drivers/Recorders/PlaybackRecorder.h"
+#include "WallpaperEngine/Data/Model/Property.h"
 #include "WallpaperEngine/Data/Utils/ScopeGuard.h"
 #include "WallpaperEngine/Logging/Log.h"
 #include "WallpaperEngine/Render/CObject.h"
@@ -190,6 +191,30 @@ JSModuleDef* scriptengine_module_loader (JSContext* ctx, const char* module, voi
     }
 
     return it->second->getDefinition ();
+}
+
+JSValue ScriptEngine::userPropertiesToJs () const {
+    JSValue result = JS_NewObject (this->m_context);
+
+    for (const auto& [name, property] : this->m_scene.getUserProperties ()) {
+	JSValue value;
+
+	if (property->getType () == DynamicValue::Vec4) {
+	    // Wallpaper Engine exposes color properties as Vec3.
+	    const glm::vec3 color = property->getVec3 ();
+
+	    value = this->m_adapters.vec3->instantiate ();
+	    JS_SetPropertyStr (this->m_context, value, "x", JS_NewFloat64 (this->m_context, color.x));
+	    JS_SetPropertyStr (this->m_context, value, "y", JS_NewFloat64 (this->m_context, color.y));
+	    JS_SetPropertyStr (this->m_context, value, "z", JS_NewFloat64 (this->m_context, color.z));
+	} else {
+	    value = this->dynamicToJs (*property);
+	}
+
+	JS_SetPropertyStr (this->m_context, result, name.c_str (), value);
+    }
+
+    return result;
 }
 
 JSValue ScriptEngine::dynamicToJs (DynamicValue& value) const {
@@ -894,7 +919,48 @@ void ScriptEngine::initialize () {
 	this->initializeModule (*module);
     }
 
+    this->dispatchApplyUserProperties ();
     this->m_runningModule = nullptr;
+}
+
+void ScriptEngine::dispatchApplyUserProperties () {
+    if (!this->m_context) {
+	return;
+    }
+
+    JSContext* ctx = this->m_context;
+    JSValue properties = this->userPropertiesToJs ();
+
+    // A property handler may destroy layers, so collect the targets before
+    // calling into scripts instead of iterating the module map directly.
+    std::vector<LoadedModule*> pending;
+
+    for (auto& module : this->m_scriptModules | std::views::values) {
+	if (!module.disabled && module.initialized) {
+	    pending.push_back (&module);
+	}
+    }
+
+    for (auto* module : pending) {
+	JSValue function = JS_GetPropertyStr (ctx, module->module, "applyUserProperties");
+
+	if (JS_IsFunction (ctx, function)) {
+	    this->activateModule (*module);
+
+	    JSValue result = this->call (module->module, 1, &properties, "applyUserProperties");
+
+	    if (JS_IsException (result)) {
+		logJSException (ctx, ("queueScript.applyUserProperties " + module->key).c_str ());
+	    }
+
+	    JS_FreeValue (ctx, result);
+	    this->m_runningModule = nullptr;
+	}
+
+	JS_FreeValue (ctx, function);
+    }
+
+    JS_FreeValue (ctx, properties);
 }
 
 bool ScriptEngine::hasCursorHandler (ScriptableObject& object) const {

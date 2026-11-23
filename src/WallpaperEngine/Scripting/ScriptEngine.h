@@ -76,6 +76,8 @@ public:
     JSValue getGlobalThis () const { return m_globalThis; }
     LoadedModule* getRunningModule () const { return m_runningModule; }
     JSValue dynamicToJs (DynamicValue& value) const;
+    /** Builds the JS object exposed to scripts as engine.userProperties. */
+    JSValue userPropertiesToJs () const;
     bool writeJsValue (JSContext* ctx, JSValue value, DynamicValue& source);
 
     /**
@@ -172,6 +174,8 @@ private:
     bool initializeModule (LoadedModule& module);
 
     void installBuiltins ();
+    /** Sends the initial (complete) user-properties snapshot to loaded scripts. */
+    void dispatchApplyUserProperties ();
 
     void notifyMediaUpdate (const Media::MediaSource::MediaInfo& media);
 

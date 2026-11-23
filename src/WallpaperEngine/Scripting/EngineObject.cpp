@@ -2,7 +2,6 @@
 #include "ScriptEngine.h"
 #include "WallpaperEngine/Audio/AudioContext.h"
 #include "WallpaperEngine/Audio/Drivers/Recorders/PlaybackRecorder.h"
-#include "WallpaperEngine/Data/Model/Property.h"
 #include "WallpaperEngine/Logging/Log.h"
 #include "WallpaperEngine/Render/Wallpapers/CScene.h"
 
@@ -39,17 +38,6 @@ JSValue makeEngineVec2 (EngineObject* engine, float x, float y) {
 
     JS_SetPropertyStr (ctx, value, "x", JS_NewFloat64 (ctx, x));
     JS_SetPropertyStr (ctx, value, "y", JS_NewFloat64 (ctx, y));
-
-    return value;
-}
-
-JSValue makeEngineVec3 (EngineObject* engine, float x, float y, float z) {
-    JSContext* ctx = engine->getEngine ().getContext ();
-    JSValue value = engine->getEngine ().getAdapters ().vec3->instantiate ();
-
-    JS_SetPropertyStr (ctx, value, "x", JS_NewFloat64 (ctx, x));
-    JS_SetPropertyStr (ctx, value, "y", JS_NewFloat64 (ctx, y));
-    JS_SetPropertyStr (ctx, value, "z", JS_NewFloat64 (ctx, z));
 
     return value;
 }
@@ -90,24 +78,7 @@ JSValue engine_get_user_properties (JSContext* ctx, JSValueConst this_val, int, 
 	return JS_UNDEFINED;
     }
 
-    JSValue result = JS_NewObject (ctx);
-
-    for (const auto& [name, property] : engine->getScene ().getUserProperties ()) {
-	JSValue value;
-
-	if (property->getType () == DynamicValue::Vec4) {
-	    // Wallpaper Engine exposes color properties as Vec3.
-	    const glm::vec3 color = property->getVec3 ();
-
-	    value = makeEngineVec3 (engine, color.x, color.y, color.z);
-	} else {
-	    value = engine->getEngine ().dynamicToJs (*property);
-	}
-
-	JS_SetPropertyStr (ctx, result, name.c_str (), value);
-    }
-
-    return result;
+    return engine->getEngine ().userPropertiesToJs ();
 }
 
 JSValue engine_get_frametime (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
