@@ -4,6 +4,7 @@
 #include "ConsoleObject.h"
 #include "EngineObject.h"
 #include "InputObject.h"
+#include "LocalStorageObject.h"
 #include "Modules/ScriptModule.h"
 #include "SceneObject.h"
 
@@ -188,6 +189,7 @@ private:
     std::unique_ptr<SceneObject> m_sceneObject;
     std::unique_ptr<ConsoleObject> m_consoleObject;
     std::unique_ptr<ScriptPropertiesObject> m_scriptPropertiesObject;
+    std::unique_ptr<LocalStorageObject> m_localStorageObject;
 
     std::map<std::string, std::unique_ptr<Modules::ScriptModule>> m_modules = {};
     std::map<std::string, LoadedModule> m_scriptModules = {};

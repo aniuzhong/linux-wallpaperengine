@@ -840,6 +840,8 @@ int CScene::getHeight () const { return static_cast<int> (this->m_projectionHeig
 
 const Properties& CScene::getUserProperties () const { return this->m_wallpaperData.project.properties; }
 
+const Project& CScene::getProject () const { return this->m_wallpaperData.project; }
+
 glm::ivec2 CScene::getScreenResolution () const {
     const auto& output = this->getContext ().getOutput ();
 

@@ -41,6 +41,8 @@ public:
 
     /** User properties and the values currently configured for them. */
     [[nodiscard]] const Properties& getUserProperties () const;
+    /** Project metadata (title, workshop id, ...). */
+    [[nodiscard]] const Project& getProject () const;
     /** Physical resolution of the output the wallpaper is rendered on. */
     [[nodiscard]] glm::ivec2 getScreenResolution () const;
 
