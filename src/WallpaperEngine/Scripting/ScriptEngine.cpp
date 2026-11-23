@@ -579,9 +579,17 @@ ScriptLayerHandle ScriptEngine::createLayerScript (
 	// (media events, audio buffer, user input); we provide just enough for
 	// the common built-in text scripts to run without ReferenceError.
 	// `frametime` is the per-frame delta in seconds (what InsertFPS reads).
+	// Scene-wide values and registerAsset come from the real IEngine object.
 	<< "  var engine = {\n"
 	<< "    get frametime() { var c = globalThis.__sceneCtx; return c ? c.dt : 0; },\n"
 	<< "    get time()      { var c = globalThis.__sceneCtx; return c ? c.time : 0; },\n"
+	<< "    get userProperties()   { return globalThis.engine ? globalThis.engine.userProperties : {}; },\n"
+	<< "    get canvasSize()       { return globalThis.engine ? globalThis.engine.canvasSize : { x: 0, y: 0 }; },\n"
+	<< "    get screenResolution() { return globalThis.engine ? globalThis.engine.screenResolution : { x: 0, y: 0 "
+	   "}; },\n"
+	<< "    registerAsset: function(file) {\n"
+	<< "      return globalThis.engine ? globalThis.engine.registerAsset(file) : String(file);\n"
+	<< "    },\n"
 	<< "  };\n"
 	<< "  function createScriptProperties() {\n"
 	<< "    var builder = {\n"
