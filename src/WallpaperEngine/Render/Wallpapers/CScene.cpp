@@ -838,6 +838,14 @@ int CScene::getWidth () const { return static_cast<int> (this->m_projectionWidth
 
 int CScene::getHeight () const { return static_cast<int> (this->m_projectionHeight); }
 
+const Properties& CScene::getUserProperties () const { return this->m_wallpaperData.project.properties; }
+
+glm::ivec2 CScene::getScreenResolution () const {
+    const auto& output = this->getContext ().getOutput ();
+
+    return { output.getFullWidth (), output.getFullHeight () };
+}
+
 const glm::vec2* CScene::getTexelSize () const { return &this->m_texelSize; }
 
 const glm::vec2* CScene::getTexelSizeHalf () const { return &this->m_texelSizeHalf; }

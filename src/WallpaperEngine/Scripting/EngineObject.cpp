@@ -2,6 +2,7 @@
 #include "ScriptEngine.h"
 #include "WallpaperEngine/Audio/AudioContext.h"
 #include "WallpaperEngine/Audio/Drivers/Recorders/PlaybackRecorder.h"
+#include "WallpaperEngine/Data/Model/Property.h"
 #include "WallpaperEngine/Logging/Log.h"
 #include "WallpaperEngine/Render/Wallpapers/CScene.h"
 
@@ -29,6 +30,84 @@ JSValue engine_register_asset (JSContext* ctx, JSValueConst this_val, int argc, 
     }
 
     return JS_DupValue (ctx, argv[0]);
+}
+
+namespace {
+JSValue makeEngineVec2 (EngineObject* engine, float x, float y) {
+    JSContext* ctx = engine->getEngine ().getContext ();
+    JSValue value = engine->getEngine ().getAdapters ().vec2->instantiate ();
+
+    JS_SetPropertyStr (ctx, value, "x", JS_NewFloat64 (ctx, x));
+    JS_SetPropertyStr (ctx, value, "y", JS_NewFloat64 (ctx, y));
+
+    return value;
+}
+
+JSValue makeEngineVec3 (EngineObject* engine, float x, float y, float z) {
+    JSContext* ctx = engine->getEngine ().getContext ();
+    JSValue value = engine->getEngine ().getAdapters ().vec3->instantiate ();
+
+    JS_SetPropertyStr (ctx, value, "x", JS_NewFloat64 (ctx, x));
+    JS_SetPropertyStr (ctx, value, "y", JS_NewFloat64 (ctx, y));
+    JS_SetPropertyStr (ctx, value, "z", JS_NewFloat64 (ctx, z));
+
+    return value;
+}
+} // namespace
+
+JSValue engine_get_canvas_size (JSContext* ctx, JSValueConst this_val, int, JSValueConst*) {
+    JSClassID classId = 0;
+    auto* engine = static_cast<EngineObject*> (JS_GetAnyOpaque (this_val, &classId));
+
+    if (engine == nullptr) {
+	return JS_UNDEFINED;
+    }
+
+    return makeEngineVec2 (
+	engine, static_cast<float> (engine->getScene ().getWidth ()),
+	static_cast<float> (engine->getScene ().getHeight ())
+    );
+}
+
+JSValue engine_get_screen_resolution (JSContext* ctx, JSValueConst this_val, int, JSValueConst*) {
+    JSClassID classId = 0;
+    auto* engine = static_cast<EngineObject*> (JS_GetAnyOpaque (this_val, &classId));
+
+    if (engine == nullptr) {
+	return JS_UNDEFINED;
+    }
+
+    const glm::ivec2 resolution = engine->getScene ().getScreenResolution ();
+
+    return makeEngineVec2 (engine, static_cast<float> (resolution.x), static_cast<float> (resolution.y));
+}
+
+JSValue engine_get_user_properties (JSContext* ctx, JSValueConst this_val, int, JSValueConst*) {
+    JSClassID classId = 0;
+    auto* engine = static_cast<EngineObject*> (JS_GetAnyOpaque (this_val, &classId));
+
+    if (engine == nullptr) {
+	return JS_UNDEFINED;
+    }
+
+    JSValue result = JS_NewObject (ctx);
+
+    for (const auto& [name, property] : engine->getScene ().getUserProperties ()) {
+	JSValue value;
+
+	if (property->getType () == DynamicValue::Vec4) {
+	    // Wallpaper Engine exposes color properties as Vec3.
+	    const glm::vec3 color = property->getVec3 ();
+
+	    value = makeEngineVec3 (engine, color.x, color.y, color.z);
+	} else {
+	    value = engine->getEngine ().dynamicToJs (*property);
+	}
+
+	JS_SetPropertyStr (ctx, result, name.c_str (), value);
+    }
+
+    return result;
 }
 
 JSValue engine_get_frametime (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
@@ -232,6 +311,21 @@ EngineObject::EngineObject (ScriptEngine& engine, Render::Wallpapers::CScene& sc
     JS_DefinePropertyGetSet (
 	this->m_engine.getContext (), this->m_instance, JS_NewAtom (this->m_engine.getContext (), "timeOfDay"),
 	JS_NewCFunction (this->m_engine.getContext (), engine_get_daytime, "get", 0),
+	JS_NewCFunction (this->m_engine.getContext (), engine_set_value, "set", 1), JS_PROP_ENUMERABLE
+    );
+    JS_DefinePropertyGetSet (
+	this->m_engine.getContext (), this->m_instance, JS_NewAtom (this->m_engine.getContext (), "canvasSize"),
+	JS_NewCFunction (this->m_engine.getContext (), engine_get_canvas_size, "get", 0),
+	JS_NewCFunction (this->m_engine.getContext (), engine_set_value, "set", 1), JS_PROP_ENUMERABLE
+    );
+    JS_DefinePropertyGetSet (
+	this->m_engine.getContext (), this->m_instance, JS_NewAtom (this->m_engine.getContext (), "screenResolution"),
+	JS_NewCFunction (this->m_engine.getContext (), engine_get_screen_resolution, "get", 0),
+	JS_NewCFunction (this->m_engine.getContext (), engine_set_value, "set", 1), JS_PROP_ENUMERABLE
+    );
+    JS_DefinePropertyGetSet (
+	this->m_engine.getContext (), this->m_instance, JS_NewAtom (this->m_engine.getContext (), "userProperties"),
+	JS_NewCFunction (this->m_engine.getContext (), engine_get_user_properties, "get", 0),
 	JS_NewCFunction (this->m_engine.getContext (), engine_set_value, "set", 1), JS_PROP_ENUMERABLE
     );
     JS_DefinePropertyValueStr (

@@ -39,6 +39,11 @@ public:
     [[nodiscard]] int getWidth () const override;
     [[nodiscard]] int getHeight () const override;
 
+    /** User properties and the values currently configured for them. */
+    [[nodiscard]] const Properties& getUserProperties () const;
+    /** Physical resolution of the output the wallpaper is rendered on. */
+    [[nodiscard]] glm::ivec2 getScreenResolution () const;
+
     /** Pixel resolution the scene renders at (render size), for resolution-dependent uniforms */
     [[nodiscard]] const glm::vec2* getTexelSize () const;
     [[nodiscard]] const glm::vec2* getTexelSizeHalf () const;
