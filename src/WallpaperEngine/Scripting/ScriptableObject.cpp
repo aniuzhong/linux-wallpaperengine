@@ -1,6 +1,7 @@
 #include "ScriptableObject.h"
 
 #include "ScriptEngine.h"
+#include "WallpaperEngine/Data/Model/Object.h"
 #include "WallpaperEngine/Data/Utils/ScopeGuard.h"
 #include "WallpaperEngine/Render/Objects/CRenderable.h"
 
@@ -10,11 +11,24 @@ using namespace WallpaperEngine::Render;
 using namespace WallpaperEngine::Scripting;
 
 ScriptableObject::ScriptableObject (Wallpapers::CScene& scene, const Object& object) : CObject (scene, object) {
-    // register common dynamic values
+    const bool isImage = object.is<Image> ();
+    const bool isParticle = object.is<Particle> ();
+    const bool isText = object.is<Text> ();
+
+    // typed objects register the values their renderers read
     this->registerProperty ("origin", *object.origin->value);
-    this->registerProperty ("scale", *object.groupScale->value);
-    this->registerProperty ("angles", *object.groupAngles->value);
-    this->registerProperty ("visible", *object.groupVisible->value);
+
+    if (!isImage && !isParticle && !isText) {
+	this->registerProperty ("scale", *object.groupScale->value);
+    }
+
+    if (!isImage && !isParticle) {
+	this->registerProperty ("angles", *object.groupAngles->value);
+    }
+
+    if (!isImage && !isParticle && !isText) {
+	this->registerProperty ("visible", *object.groupVisible->value);
+    }
 }
 
 DynamicValue& ScriptableObject::getProperty (const std::string& name) {
