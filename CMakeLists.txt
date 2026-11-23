@@ -629,6 +629,7 @@ if(BUILD_TESTING)
         ${COMMON_SOURCES}
 
         src/WallpaperEngine/Testing/Cases/Example.cpp
+        src/WallpaperEngine/Testing/Cases/AlbumTexture.cpp
         src/WallpaperEngine/Testing/Cases/JsonOptional.cpp
         src/WallpaperEngine/Testing/Cases/MediaSourceUpdate.cpp
         src/WallpaperEngine/Testing/Render/TestingOpenGLDriver.cpp

@@ -3,8 +3,11 @@
 #include "RenderContext.h"
 #include "WallpaperEngine/Assets/AssetLoadException.h"
 #include "WallpaperEngine/Data/Utils/ScopeGuard.h"
+#include "WallpaperEngine/Logging/Log.h"
 #include "WallpaperEngine/Media/MediaSource.h"
 #include "stb_image.h"
+
+#include <limits>
 
 using namespace WallpaperEngine::Render;
 
@@ -66,12 +69,40 @@ void AlbumTexture::incrementUsageCount () const { }
 void AlbumTexture::decrementUsageCount () const { }
 void AlbumTexture::update () const { }
 
+std::optional<size_t> AlbumTexture::readbackSize (uint32_t width, uint32_t height) {
+    if (width == 0 || height == 0) {
+	return std::nullopt;
+    }
+
+    // Check the multiplication before doing it: width * height * 4 can
+    // overflow both 32-bit operands and 64-bit arithmetic for large artwork.
+    constexpr auto maxSize = std::numeric_limits<size_t>::max ();
+
+    if (width > maxSize / 4 / height) {
+	return std::nullopt;
+    }
+
+    return static_cast<size_t> (static_cast<uint64_t> (width) * height * 4);
+}
+
 void AlbumTexture::copyContents (const TextureProvider& other) const noexcept {
     // fallback to gpu -> cpu -> gpu copy
     // RGBA8 texture: 4 bytes per pixel
-    size_t bufferSize = other.getTextureWidth (0) * other.getTextureHeight (0) * 4;
+    const auto bufferSize = readbackSize (other.getTextureWidth (0), other.getTextureHeight (0));
 
-    uint8_t* buffer = new uint8_t[bufferSize];
+    if (!bufferSize.has_value ()) {
+	sLog.error ("Album art readback size is invalid: ", other.getTextureWidth (0), "x", other.getTextureHeight (0));
+	return;
+    }
+
+    std::vector<uint8_t> buffer;
+
+    try {
+	buffer.resize (*bufferSize);
+    } catch (const std::bad_alloc&) {
+	sLog.error ("Cannot allocate ", *bufferSize, " bytes for album art readback");
+	return;
+    }
 
     // Read the source texture. glGetnTexImage is GL 4.5/ARB_robustness; the
     // renderer only guarantees a 3.3 core context, so use the plain 3.3
@@ -79,19 +110,17 @@ void AlbumTexture::copyContents (const TextureProvider& other) const noexcept {
     glBindTexture (GL_TEXTURE_2D, other.getTextureID (0));
 
     if (GLEW_VERSION_4_5) {
-	glGetnTexImage (GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, bufferSize, buffer);
+	glGetnTexImage (GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, *bufferSize, buffer.data ());
     } else {
-	glGetTexImage (GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, buffer);
+	glGetTexImage (GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, buffer.data ());
     }
 
     // Upload into another texture
     glBindTexture (GL_TEXTURE_2D, this->m_textureID);
     glTexImage2D (
 	GL_TEXTURE_2D, 0, GL_RGBA8, other.getTextureWidth (0), other.getTextureHeight (0), 0, GL_RGBA, GL_UNSIGNED_BYTE,
-	buffer
+	buffer.data ()
     );
-
-    delete[] buffer;
 
     // copy over the important metadata
     this->m_width = other.getTextureWidth (0);

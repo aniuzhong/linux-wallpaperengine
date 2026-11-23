@@ -4,11 +4,21 @@
 #include "TextureProvider.h"
 #include "WallpaperEngine/Media/MediaSource.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+
 namespace WallpaperEngine::Render {
 class AlbumTexture : public TextureProvider, public Helpers::ContextAware {
 public:
     explicit AlbumTexture (RenderContext& context);
     ~AlbumTexture () override;
+
+    /**
+     * @return Byte size of an RGBA8 readback for the given texture dimensions,
+     * or nullopt when the dimensions are invalid or the size would overflow.
+     */
+    [[nodiscard]] static std::optional<size_t> readbackSize (uint32_t width, uint32_t height);
 
     [[nodiscard]] GLuint getTextureID (uint32_t imageIndex) const override;
     [[nodiscard]] uint32_t getTextureWidth (uint32_t imageIndex) const override;
