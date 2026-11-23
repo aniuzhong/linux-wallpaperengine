@@ -40,6 +40,12 @@ public:
     virtual void emitParticles (int count) { }
     /** SceneScript `thisLayer.play()` (sound layers only). */
     virtual void playSound () { }
+    /** SceneScript `thisLayer.stop()` (sound layers only). */
+    virtual void stopSound () { }
+    /** SceneScript `thisLayer.pause()` (sound layers only). */
+    virtual void pauseSound () { }
+    /** SceneScript `thisLayer.isPlaying()` (sound layers only). */
+    [[nodiscard]] virtual bool isSoundPlaying () const { return false; }
 
 protected:
     void registerProperty (const std::string& name, DynamicValue& value);

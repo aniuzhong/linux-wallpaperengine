@@ -1,7 +1,9 @@
 #include "ScriptableObjectAdapter.h"
 
+#include <cstring>
 #include <utility>
 
+#include "WallpaperEngine/Data/Model/Object.h"
 #include "WallpaperEngine/Data/Utils/ScopeGuard.h"
 #include "WallpaperEngine/Render/Objects/CParticle.h"
 #include "WallpaperEngine/Render/Objects/CSound.h"
@@ -39,6 +41,42 @@ JSValue scriptableobject_property_get (JSContext* ctx, JSValueConst obj_val, JSA
 
     ScopeGuard guard ([=] { JS_FreeCString (ctx, name); });
 
+    const Object& model = container->object.getObject ();
+
+    // WE exposes the generated layer implementation as `.instance`; old scripts
+    // use it to reach properties available on the concrete layer class.
+    if (std::strcmp (name, "instance") == 0) {
+	return JS_DupValue (ctx, obj_val);
+    }
+
+    if (std::strcmp (name, "name") == 0) {
+	return JS_NewString (ctx, model.name.c_str ());
+    }
+
+    // Image and text sizes are model metadata rather than scriptable values.
+    if (std::strcmp (name, "size") == 0) {
+	glm::vec2 size;
+	bool found = false;
+
+	if (model.is<Image> ()) {
+	    size = model.as<Image> ()->size;
+	    found = true;
+	} else if (model.is<Text> ()) {
+	    size = model.as<Text> ()->size;
+	    found = true;
+	}
+
+	if (!found) {
+	    return JS_UNDEFINED;
+	}
+
+	JSValue value = container->adapter.getEngine ().getAdapters ().vec2->instantiate ();
+	JS_SetPropertyStr (ctx, value, "x", JS_NewFloat64 (ctx, size.x));
+	JS_SetPropertyStr (ctx, value, "y", JS_NewFloat64 (ctx, size.y));
+
+	return value;
+    }
+
     try {
 	// find the property inside, otherwise return undefined
 	auto& property = container->object.getProperty (name);
@@ -66,6 +104,12 @@ int scriptableobject_property_set (
     }
 
     ScopeGuard guard ([=] { JS_FreeCString (ctx, name); });
+
+    // Image/text size is read-only metadata; ignore writes instead of logging a
+    // missing-property error from the generic property path.
+    if (std::strcmp (name, "size") == 0) {
+	return 0;
+    }
 
     try {
 	auto& property = container->object.getProperty (name);
@@ -113,6 +157,110 @@ static JSValue scriptableobject_play (JSContext* ctx, JSValueConst this_val, int
     return JS_UNDEFINED;
 }
 
+static JSValue scriptableobject_stop (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* object = ScriptableObjectAdapter::getObject (this_val);
+
+    if (object == nullptr) {
+	return JS_EXCEPTION;
+    }
+
+    object->stopSound ();
+    return JS_UNDEFINED;
+}
+
+static JSValue scriptableobject_pause (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* object = ScriptableObjectAdapter::getObject (this_val);
+
+    if (object == nullptr) {
+	return JS_EXCEPTION;
+    }
+
+    object->pauseSound ();
+    return JS_UNDEFINED;
+}
+
+static JSValue scriptableobject_is_playing (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* object = ScriptableObjectAdapter::getObject (this_val);
+
+    if (object == nullptr) {
+	return JS_EXCEPTION;
+    }
+
+    return JS_NewBool (ctx, object->isSoundPlaying ());
+}
+
+static JSValue scriptableobject_get_material (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    // Material property access is exposed for script compatibility; properties
+    // written here are not bound to shader uniforms yet.
+    return JS_NewObject (ctx);
+}
+
+static JSValue scriptableobject_get_effect (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* object = ScriptableObjectAdapter::getObject (this_val);
+
+    if (object == nullptr || argc < 1) {
+	return JS_UNDEFINED;
+    }
+
+    const Object& model = object->getObject ();
+
+    if (!model.is<Image> ()) {
+	return JS_UNDEFINED;
+    }
+
+    const auto& effects = model.as<Image> ()->effects;
+    bool found = false;
+
+    if (JS_IsNumber (argv[0])) {
+	int index = 0;
+	JS_ToInt32 (ctx, &index, argv[0]);
+	found = index >= 0 && static_cast<size_t> (index) < effects.size ();
+    } else {
+	const char* query = JS_ToCString (ctx, argv[0]);
+
+	if (query == nullptr) {
+	    return JS_UNDEFINED;
+	}
+
+	for (const auto& effect : effects) {
+	    if (effect->name == query) {
+		found = true;
+		break;
+	    }
+	}
+
+	JS_FreeCString (ctx, query);
+    }
+
+    if (!found) {
+	return JS_UNDEFINED;
+    }
+
+    JSValue result = JS_NewObject (ctx);
+    JS_DefinePropertyValueStr (
+	ctx, result, "getMaterial", JS_NewCFunction (ctx, scriptableobject_get_material, "getMaterial", 1),
+	JS_PROP_ENUMERABLE
+    );
+
+    return result;
+}
+
+static JSValue scriptableobject_get_effect_count (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* object = ScriptableObjectAdapter::getObject (this_val);
+
+    if (object == nullptr) {
+	return JS_UNDEFINED;
+    }
+
+    const Object& model = object->getObject ();
+
+    if (!model.is<Image> ()) {
+	return JS_NewInt32 (ctx, 0);
+    }
+
+    return JS_NewInt32 (ctx, static_cast<int32_t> (model.as<Image> ()->effects.size ()));
+}
+
 ScriptableObjectAdapter::ScriptableObjectAdapter (ScriptEngine& engine, std::string name) :
     ObjectAdapter (engine), m_exoticMethods (
 				{
@@ -146,6 +294,7 @@ JSValue ScriptableObjectAdapter::instantiate (ScriptableObject& object) {
     // the ScriptableObject base constructor, before the C++ derived type is
     // complete. A dynamic_cast<CParticle*> at that point fails and would leave
     // thisLayer without emitParticles().
+    const bool isImage = object.getObject ().is<Image> ();
     const bool isParticle = object.getObject ().is<Particle> ();
     const bool isSound = object.getObject ().is<Sound> ();
 
@@ -156,9 +305,30 @@ JSValue ScriptableObjectAdapter::instantiate (ScriptableObject& object) {
 	);
     }
 
+    if (isImage) {
+	JS_DefinePropertyValueStr (
+	    ctx, result, "getEffect", JS_NewCFunction (ctx, scriptableobject_get_effect, "getEffect", 1),
+	    JS_PROP_ENUMERABLE
+	);
+	JS_DefinePropertyValueStr (
+	    ctx, result, "getEffectCount",
+	    JS_NewCFunction (ctx, scriptableobject_get_effect_count, "getEffectCount", 0), JS_PROP_ENUMERABLE
+	);
+    }
+
     if (isSound) {
 	JS_DefinePropertyValueStr (
 	    ctx, result, "play", JS_NewCFunction (ctx, scriptableobject_play, "play", 0), JS_PROP_ENUMERABLE
+	);
+	JS_DefinePropertyValueStr (
+	    ctx, result, "stop", JS_NewCFunction (ctx, scriptableobject_stop, "stop", 0), JS_PROP_ENUMERABLE
+	);
+	JS_DefinePropertyValueStr (
+	    ctx, result, "pause", JS_NewCFunction (ctx, scriptableobject_pause, "pause", 0), JS_PROP_ENUMERABLE
+	);
+	JS_DefinePropertyValueStr (
+	    ctx, result, "isPlaying", JS_NewCFunction (ctx, scriptableobject_is_playing, "isPlaying", 0),
+	    JS_PROP_ENUMERABLE
 	);
     }
 
