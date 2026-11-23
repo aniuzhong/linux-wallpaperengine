@@ -23,6 +23,14 @@ JSValue engine_open_user_shortcut (JSContext* ctx, JSValueConst this_val, int ar
     return JS_UNDEFINED;
 }
 
+JSValue engine_register_asset (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc != 1 || !JS_IsString (argv[0])) {
+	return JS_UNDEFINED;
+    }
+
+    return JS_DupValue (ctx, argv[0]);
+}
+
 JSValue engine_get_frametime (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     return JS_NewFloat64 (ctx, g_Time - g_TimeLast);
 }
@@ -256,6 +264,10 @@ EngineObject::EngineObject (ScriptEngine& engine, Render::Wallpapers::CScene& sc
 	this->m_engine.getContext (), this->m_instance, "openUserShortcut",
 	JS_NewCFunction (this->m_engine.getContext (), engine_open_user_shortcut, "openUserShortcut", 0),
 	JS_PROP_ENUMERABLE
+    );
+    JS_DefinePropertyValueStr (
+	this->m_engine.getContext (), this->m_instance, "registerAsset",
+	JS_NewCFunction (this->m_engine.getContext (), engine_register_asset, "registerAsset", 1), JS_PROP_ENUMERABLE
     );
     JS_DefinePropertyValueStr (
 	this->m_engine.getContext (), this->m_instance, "registerAudioBuffers",
