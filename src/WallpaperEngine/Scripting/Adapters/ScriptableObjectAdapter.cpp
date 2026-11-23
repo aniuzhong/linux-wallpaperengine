@@ -20,6 +20,8 @@ struct OpaqueScriptableObjectAdapter {
     WallpaperEngine::Scripting::ScriptableObject& object;
 };
 
+void scriptableobject_finalizer (JSRuntime* rt, JSValueConst val);
+
 JSValue scriptableobject_property_get (JSContext* ctx, JSValueConst obj_val, JSAtom atom, JSValueConst receiver) {
     JSClassID classId = 0;
 
@@ -45,21 +47,6 @@ JSValue scriptableobject_property_get (JSContext* ctx, JSValueConst obj_val, JSA
     } catch (const std::exception&) {
 	return JS_UNDEFINED;
     }
-}
-
-ScriptableObjectAdapter::ScriptableObjectAdapter (ScriptEngine& engine, std::string name) :
-    ObjectAdapter (engine), m_exoticMethods (
-				{
-				    .get_property = scriptableobject_property_get,
-				}
-			    ),
-    m_name (std::move (name)) {
-    this->registerType (
-	{
-	    .class_name = m_name.c_str (),
-	    .exotic = &m_exoticMethods,
-	}
-    );
 }
 
 WallpaperEngine::Scripting::ScriptableObject* ScriptableObjectAdapter::getObject (JSValueConst value) {
@@ -100,6 +87,22 @@ static JSValue scriptableobject_play (JSContext* ctx, JSValueConst this_val, int
     return JS_UNDEFINED;
 }
 
+ScriptableObjectAdapter::ScriptableObjectAdapter (ScriptEngine& engine, std::string name) :
+    ObjectAdapter (engine), m_exoticMethods (
+				{
+				    .get_property = scriptableobject_property_get,
+				}
+			    ),
+    m_name (std::move (name)) {
+    this->registerType (
+	{
+	    .class_name = m_name.c_str (),
+	    .finalizer = scriptableobject_finalizer,
+	    .exotic = &m_exoticMethods,
+	}
+    );
+}
+
 JSValue ScriptableObjectAdapter::instantiate (ScriptableObject& object) {
     JSValue result = this->ObjectAdapter::instantiate (object);
     JS_SetOpaque (
@@ -133,6 +136,18 @@ JSValue ScriptableObjectAdapter::instantiate (ScriptableObject& object) {
     }
 
     return result;
+}
+
+void scriptableobject_finalizer (JSRuntime* rt, JSValueConst val) {
+    JSClassID classId = 0;
+
+    const auto* container = static_cast<OpaqueScriptableObjectAdapter*> (JS_GetAnyOpaque (val, &classId));
+
+    if (container == nullptr || container->magic != SCRIPTABLE_OPAQUE_MAGIC) {
+	return;
+    }
+
+    delete container;
 }
 
 JSValue ScriptableObjectAdapter::instantiate (DynamicValue& value) {
