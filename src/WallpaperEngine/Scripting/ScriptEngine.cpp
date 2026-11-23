@@ -455,6 +455,25 @@ static void logJSValue (JSContext* ctx, const char* context, JSValue value) {
 
     sLog.error ("ScriptEngine [", context, "]: ", str);
     JS_FreeCString (ctx, str);
+
+    if (JS_IsObject (value)) {
+	JSValue stack = JS_GetPropertyStr (ctx, value, "stack");
+
+	if (JS_IsException (stack)) {
+	    JS_FreeValue (ctx, JS_GetException (ctx));
+	} else if (!JS_IsUndefined (stack) && !JS_IsNull (stack)) {
+	    const char* stackStr = JS_ToCString (ctx, stack);
+
+	    if (stackStr != nullptr) {
+		sLog.error ("ScriptEngine [", context, "] stack: ", stackStr);
+		JS_FreeCString (ctx, stackStr);
+	    } else {
+		JS_FreeValue (ctx, JS_GetException (ctx));
+	    }
+	}
+
+	JS_FreeValue (ctx, stack);
+    }
 }
 
 static void logJSException (JSContext* ctx, const char* context) {
