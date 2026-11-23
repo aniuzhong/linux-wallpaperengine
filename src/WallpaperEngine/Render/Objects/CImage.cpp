@@ -1010,7 +1010,8 @@ void CImage::setupPasses () {
 }
 
 bool CImage::shouldRenderFinalPass (bool isLastPass) const {
-    if (!isLastPass || !this->getImage ().visible->value->getBool ()) {
+    // Visibility can change at runtime; render() already skips hidden layers.
+    if (!isLastPass) {
 	return false;
     }
 
