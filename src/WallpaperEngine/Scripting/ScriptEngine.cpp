@@ -259,7 +259,7 @@ static bool jsToDynamicValue (JSContext* ctx, JSValue val, DynamicValue& source)
 	    return false;
 	}
 
-	source.update (str, DynamicValue::UpdateSource::Script);
+	source.update (std::string (str), DynamicValue::UpdateSource::Script);
 	JS_FreeCString (ctx, str);
 	return true;
     }
