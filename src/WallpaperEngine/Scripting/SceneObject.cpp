@@ -316,7 +316,11 @@ JSValue sort_layer (JSContext* ctx, JSValueConst this_val, int argc, JSValueCons
     return JS_UNDEFINED;
 }
 
-JSValue scene_set_value (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) { return JS_EXCEPTION; }
+JSValue scene_set_value (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    // Scene-wide camera/shader settings are not writable yet; accept writes so
+    // scripts that toggle them can keep running instead of throwing.
+    return JS_UNDEFINED;
+}
 
 SceneObject::SceneObject (ScriptEngine& engine, Render::Wallpapers::CScene& scene) :
     m_scene (scene), m_engine (engine), m_classId (0) {
