@@ -783,6 +783,101 @@ void ScriptEngine::disableModule (LoadedModule& module, const std::string& conte
     sLog.error ("ScriptEngine: disabling script after ", context);
 }
 
+bool ScriptEngine::runInit (LoadedModule& module) {
+    JSValue args[] = { this->dynamicToJs (module.value) };
+    JSValue result = this->call (module.module, 1, args, "init");
+
+    ScopeGuard guard ([this, args, result] () {
+	JS_FreeValue (this->m_context, result);
+	JS_FreeValue (this->m_context, args[0]);
+    });
+
+    if (JS_IsException (result) || JS_IsUninitialized (result)) {
+	logJSException (this->m_context, ("queueScript.init " + module.key).c_str ());
+	this->disableModule (module, "init failure: " + module.key);
+	return false;
+    }
+
+    if (!JS_IsUndefined (result)) {
+	if (!jsToDynamicValue (this->m_context, result, module.value)) {
+	    sLog.error ("ScriptEngine: init returned an unsupported value for ", module.key);
+	    this->disableModule (module, "init conversion failure: " + module.key);
+	    return false;
+	}
+    }
+
+    return true;
+}
+
+bool ScriptEngine::runUpdate (LoadedModule& module, const std::string& context, const std::string& failure) {
+    JSValue args[] = { this->dynamicToJs (module.value) };
+    JSValue result = this->call (module.module, 1, args, "update");
+
+    ScopeGuard guard ([this, args, result] () {
+	JS_FreeValue (this->m_context, result);
+	JS_FreeValue (this->m_context, args[0]);
+    });
+
+    if (JS_IsException (result) || JS_IsUninitialized (result)) {
+	logJSException (this->m_context, context.c_str ());
+	this->disableModule (module, failure);
+	return false;
+    }
+
+    // modules without an update export evaluate to undefined, keep the parsed value as is
+    if (!JS_IsUndefined (result)) {
+	if (!jsToDynamicValue (this->m_context, result, module.value)) {
+	    sLog.error ("ScriptEngine: update returned an unsupported value for ", module.key);
+	    this->disableModule (module, failure);
+	    return false;
+	}
+    }
+
+    return true;
+}
+
+bool ScriptEngine::initializeModule (LoadedModule& module) {
+    if (module.disabled || module.initialized) {
+	return !module.disabled;
+    }
+
+    this->activateModule (module);
+
+    if (module.hasInit && !this->runInit (module)) {
+	this->m_runningModule = nullptr;
+	return false;
+    }
+
+    if (!this->runUpdate (module, "queueScript.update " + module.key, "initial update failure: " + module.key)) {
+	this->m_runningModule = nullptr;
+	return false;
+    }
+
+    module.initialized = true;
+    this->m_runningModule = nullptr;
+    return true;
+}
+
+void ScriptEngine::initialize () {
+    this->m_sceneReady = true;
+
+    std::vector<LoadedModule*> pending;
+
+    for (auto& module : this->m_scriptModules | std::views::values) {
+	if (!module.disabled && !module.initialized) {
+	    pending.push_back (&module);
+	}
+    }
+
+    std::ranges::sort (pending, {}, &LoadedModule::order);
+
+    for (auto* module : pending) {
+	this->initializeModule (*module);
+    }
+
+    this->m_runningModule = nullptr;
+}
+
 bool ScriptEngine::hasCursorHandler (ScriptableObject& object) const {
     for (const auto& module : this->m_scriptModules | std::views::values) {
 	if (!module.disabled && module.object == &object && module.cursorHandlerMask != 0) {
@@ -966,6 +1061,11 @@ void ScriptEngine::queueScript (const std::string& key, DynamicValue& currentVal
     }
 
     inserted.first->second.cursorHandlerMask = readCursorHandlerMask (this->m_context, module);
+    inserted.first->second.order = this->m_nextModuleOrder++;
+
+    JSValue initFunction = JS_GetPropertyStr (this->m_context, module, "init");
+    inserted.first->second.hasInit = JS_IsFunction (this->m_context, initFunction);
+    JS_FreeValue (this->m_context, initFunction);
 
     JSValue thisLayer = this->m_adapters.object->instantiate (object);
 
@@ -1010,62 +1110,8 @@ void ScriptEngine::queueScript (const std::string& key, DynamicValue& currentVal
     inserted.first->second.thisLayer = JS_DupValue (this->m_context, thisLayer);
     JS_SetPropertyStr (this->m_context, this->m_globalThis, "thisLayer", thisLayer);
 
-    // script properties do not need update as they're connected directly to the source data
-    this->m_runningModule = &inserted.first->second;
-
-    // WE runs init() once when the layer loads, its return value replaces the property value
-    {
-	JSValue args[] = { this->dynamicToJs (currentValue) };
-	JSValue result = this->call (module, 1, args, "init");
-
-	ScopeGuard guard ([this, args, result] () {
-	    JS_FreeValue (this->m_context, result);
-	    JS_FreeValue (this->m_context, args[0]);
-	});
-
-	if (JS_IsException (result) || JS_IsUninitialized (result)) {
-	    logJSException (this->m_context, ("queueScript.init " + key).c_str ());
-	    this->disableModule (inserted.first->second, "init failure: " + key);
-	    this->m_runningModule = nullptr;
-	    return;
-	}
-
-	if (!JS_IsUndefined (result)) {
-	    if (!jsToDynamicValue (this->m_context, result, currentValue)) {
-		sLog.error ("ScriptEngine: init returned an unsupported value for ", key);
-		this->disableModule (inserted.first->second, "init conversion failure: " + key);
-		this->m_runningModule = nullptr;
-		return;
-	    }
-	}
-    }
-
-    // check if there's an update method and run it
-    {
-	JSValue args[] = { this->dynamicToJs (currentValue) };
-	JSValue result = this->call (module, 1, args, "update");
-
-	ScopeGuard guard ([this, args, result] () {
-	    JS_FreeValue (this->m_context, result);
-	    JS_FreeValue (this->m_context, args[0]);
-	});
-
-	if (JS_IsException (result) || JS_IsUninitialized (result)) {
-	    logJSException (this->m_context, ("queueScript.update " + key).c_str ());
-	    this->disableModule (inserted.first->second, "initial update failure: " + key);
-	    this->m_runningModule = nullptr;
-	    return;
-	}
-
-	// modules without an update export evaluate to undefined, keep the parsed value as is
-	if (!JS_IsUndefined (result)) {
-	    if (!jsToDynamicValue (this->m_context, result, currentValue)) {
-		sLog.error ("ScriptEngine: update returned an unsupported value for ", key);
-		this->disableModule (inserted.first->second, "initial update conversion failure: " + key);
-		this->m_runningModule = nullptr;
-		return;
-	    }
-	}
+    if (this->m_sceneReady) {
+	this->initializeModule (inserted.first->second);
     }
 
     this->m_runningModule = nullptr;
@@ -1079,32 +1125,12 @@ void ScriptEngine::tick () {
 
     // run all update methods
     for (auto& module : this->m_scriptModules | std::views::values) {
-	if (module.disabled) {
+	if (module.disabled || !module.initialized) {
 	    continue;
 	}
 
 	this->activateModule (module);
-
-	JSValue args[] = { this->dynamicToJs (module.value) };
-	JSValue result = this->call (module.module, 1, args, "update");
-	ScopeGuard guard ([result, args, this] () {
-	    JS_FreeValue (this->m_context, result);
-	    JS_FreeValue (this->m_context, args[0]);
-	});
-
-	if (JS_IsException (result) || JS_IsUninitialized (result)) {
-	    logJSException (this->m_context, ("tick.update " + module.key).c_str ());
-	    this->disableModule (module, "update failure: " + module.key);
-	    continue;
-	}
-
-	// modules without an update export evaluate to undefined, keep the parsed value as is
-	if (!JS_IsUndefined (result)) {
-	    if (!jsToDynamicValue (this->m_context, result, module.value)) {
-		sLog.error ("ScriptEngine: update returned an unsupported value for ", module.key);
-		this->disableModule (module, "update conversion failure: " + module.key);
-	    }
-	}
+	this->runUpdate (module, "tick.update " + module.key, "update failure: " + module.key);
     }
 }
 

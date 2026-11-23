@@ -52,6 +52,9 @@ public:
 	JSValue thisLayer = JS_UNDEFINED;
 	ScriptableObject* object = nullptr;
 	uint32_t cursorHandlerMask = 0;
+	size_t order = 0;
+	bool hasInit = false;
+	bool initialized = false;
 	/** A failed init/update/media/cursor handler disables the script to avoid repeating the failure every frame */
 	bool disabled = false;
     };
@@ -90,6 +93,9 @@ public:
      * timeouts, intervals AND calls any update() functions.
      */
     void tick ();
+
+    /** Runs deferred init() and first update() calls once the scene is fully built. */
+    void initialize ();
 
     /** Whether any script on this object exports one of the cursor event handlers */
     [[nodiscard]] bool hasCursorHandler (ScriptableObject& object) const;
@@ -159,6 +165,9 @@ private:
     JSValue call (JSValue module, int argc, JSValueConst argv[], const char* name);
     void activateModule (LoadedModule& module);
     void disableModule (LoadedModule& module, const std::string& context);
+    bool runInit (LoadedModule& module);
+    bool runUpdate (LoadedModule& module, const std::string& context, const std::string& failure);
+    bool initializeModule (LoadedModule& module);
 
     void installBuiltins ();
 
@@ -183,6 +192,8 @@ private:
     std::map<std::string, LoadedModule> m_scriptModules = {};
 
     LoadedModule* m_runningModule = nullptr;
+    size_t m_nextModuleOrder = 0;
+    bool m_sceneReady = false;
 
     ScriptLayerHandle m_nextLayerId = 1;
     bool m_layerRegistryReady = false;

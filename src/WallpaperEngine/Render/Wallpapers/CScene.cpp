@@ -238,6 +238,8 @@ CScene::CScene (
 	    sLog.error ("Bloom object failed to setup, bloom disabled for this wallpaper");
 	}
     }
+
+    this->m_scriptEngine->initialize ();
 }
 
 CScene::~CScene () {
