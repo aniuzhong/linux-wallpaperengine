@@ -88,25 +88,28 @@ public:
 
 	return result;
     }
+    // A value that is present but can't be converted to T (a malformed vector
+    // string, a boolean where a string is expected...) is logged and treated as
+    // missing. These overloads are noexcept, so letting the conversion error out
+    // would terminate the process instead of letting the caller keep its default.
     template <typename T> [[nodiscard]] std::optional<T> optional (const std::string& key) const noexcept {
-	auto base = this->base ();
+	const auto& base = this->base ();
 	const auto it = base.find (key);
 
 	if (it == base.end () || it->is_null ()) {
 	    return std::nullopt;
 	}
 
-	return *it;
+	try {
+	    T value = *it;
+	    return value;
+	} catch (const std::exception& e) {
+	    sLog.error ("Ignoring invalid value for \"", key, "\": ", e.what ());
+	    return std::nullopt;
+	}
     }
     template <typename T> [[nodiscard]] T optional (const std::string& key, T defaultValue) const noexcept {
-	auto base = this->base ();
-	const auto it = base.find (key);
-
-	if (it == base.end () || it->is_null ()) {
-	    return defaultValue;
-	}
-
-	return (*it);
+	return this->optional<T> (key).value_or (std::move (defaultValue));
     }
     [[nodiscard]] UserSettingUniquePtr user (const std::string& key, const Properties& properties) const;
     template <typename T>
