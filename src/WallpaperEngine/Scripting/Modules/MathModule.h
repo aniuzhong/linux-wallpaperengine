@@ -9,8 +9,5 @@ class MathModule : public ScriptModule {
 public:
     MathModule (ScriptEngine& engine);
     ~MathModule () override;
-
-protected:
-    uint32_t m_instanceId;
 };
 }

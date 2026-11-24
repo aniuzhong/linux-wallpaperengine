@@ -82,7 +82,7 @@ JSValue engine_get_user_properties (JSContext* ctx, JSValueConst this_val, int, 
 }
 
 JSValue engine_get_frametime (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
-    return JS_NewFloat64 (ctx, g_Time - g_TimeLast);
+    return JS_NewFloat64 (ctx, resolveFrameTime (g_Time - g_TimeLast));
 }
 
 JSValue engine_get_runtime (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {

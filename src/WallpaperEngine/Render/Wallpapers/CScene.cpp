@@ -918,6 +918,8 @@ const glm::vec2* CScene::getMousePositionLast () const { return &this->m_mousePo
 
 const glm::vec2* CScene::getMousePositionNormalized () const { return &this->m_mousePositionNormalized; }
 
+const glm::vec2* CScene::getMousePositionViewport () const { return &this->m_mousePositionViewport; }
+
 glm::vec3 CScene::mapMousePositionToWorld (
     const glm::vec2& mousePosition, float ustart, float uend, float vstart, float vend, float sceneWidth,
     float sceneHeight, float shownWidth, float shownHeight

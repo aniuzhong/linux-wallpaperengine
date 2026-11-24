@@ -611,6 +611,9 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Scripting/Modules/MathModule.cpp
     src/WallpaperEngine/Scripting/Modules/ScriptModule.h
     src/WallpaperEngine/Scripting/Modules/ScriptModule.cpp
+    src/WallpaperEngine/Scripting/Modules/VectorModule.h
+    src/WallpaperEngine/Scripting/Modules/VectorModule.cpp
+    src/WallpaperEngine/Scripting/Modules/VectorMath.h
 
     src/WallpaperEngine/Scripting/ConsoleObject.h
     src/WallpaperEngine/Scripting/ConsoleObject.cpp
@@ -661,6 +664,7 @@ if(BUILD_TESTING)
         src/WallpaperEngine/Testing/Cases/ObjectParser.cpp
         src/WallpaperEngine/Testing/Cases/ShaderUnit.cpp
         src/WallpaperEngine/Testing/Cases/CameraPath.cpp
+        src/WallpaperEngine/Testing/Cases/Scripting.cpp
         src/WallpaperEngine/Testing/Cases/StringParsing.cpp)
 endif()
 

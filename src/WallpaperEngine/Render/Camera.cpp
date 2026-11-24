@@ -1,3 +1,4 @@
+#include <glm/geometric.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -5,6 +6,7 @@
 
 #include "Camera.h"
 #include "CameraProjection.h"
+#include "WallpaperEngine/Logging/Log.h"
 
 using namespace WallpaperEngine;
 using namespace WallpaperEngine::Render;
@@ -76,11 +78,15 @@ void Camera::tick () {
     this->m_currentEye = sample.eye;
     this->m_currentCenter = sample.center;
     this->m_currentUp = sample.up;
+    this->m_currentZoom = sample.zoom;
     this->m_lookat = glm::lookAt (this->m_currentEye, this->m_currentCenter, this->m_currentUp);
 
-    // camera path fov/zoom channels drive the perspective projection too;
-    // legacy paths fall back to the scene fov and zoom 1.0
-    if (!this->m_isOrthogonal) {
+    // camera path fov/zoom channels drive both projections; legacy paths fall
+    // back to the scene fov and zoom 1.0. 2D and 3D use different projection
+    // builders, but the zoom channel is shared by Wallpaper Engine.
+    if (this->m_isOrthogonal) {
+	this->updateOrthogonalProjection ();
+    } else {
 	this->updatePerspectiveProjection (sample.fov, sample.zoom);
     }
 }
@@ -103,9 +109,15 @@ bool Camera::isYFlipped () const { return this->m_isYFlipped; }
 
 Wallpapers::CScene& Camera::getScene () const { return this->m_scene; }
 
-float Camera::getWidth () const { return this->m_width; }
+float Camera::getWidth () const {
+    // Callers use these values as the world region currently shown on screen
+    // (mouse mapping, parallax), so 2D zoom has to affect them.
+    return this->m_isOrthogonal ? this->m_width / this->getOrthogonalZoom () : this->m_width;
+}
 
-float Camera::getHeight () const { return this->m_height; }
+float Camera::getHeight () const {
+    return this->m_isOrthogonal ? this->m_height / this->getOrthogonalZoom () : this->m_height;
+}
 
 float Camera::getFov () const { return this->m_camera.projection.fov->value->getFloat (); }
 
@@ -113,18 +125,84 @@ float Camera::getNearZ () const { return this->m_camera.projection.nearz->value-
 
 float Camera::getFarZ () const { return this->m_camera.projection.farz->value->getFloat (); }
 
+float Camera::getZoom () const { return this->m_currentZoom; }
+
+bool Camera::usesCameraPath () const { return !this->m_camera.paths.empty () && this->m_totalPathDuration > 0.0f; }
+
+void Camera::setStaticTransforms (
+    const glm::vec3& eye, const glm::vec3& center, const glm::vec3& up, const float zoom
+) {
+    // SceneScript documentation explicitly says not to mix static camera
+    // transforms with camera paths. Paths keep ownership so interactive
+    // scripts cannot fight the authored cinematic.
+    if (this->usesCameraPath ()) {
+	if (!this->m_pathConflictWarned) {
+	    sLog.debug ("Ignoring SceneScript camera transforms because a camera path is active");
+	    this->m_pathConflictWarned = true;
+	}
+
+	return;
+    }
+
+    this->m_currentEye = eye;
+    this->m_currentCenter = center;
+
+    if (glm::dot (up, up) > 0.000001f) {
+	this->m_currentUp = glm::normalize (up);
+    }
+
+    // CameraTransforms.zoom is documented as a 2D-only value; 3D scenes use
+    // thisScene.fov instead. Paths above own every camera channel, so static
+    // transforms never reach this point while a path is active.
+    if (zoom > 0.0f && this->m_isOrthogonal) {
+	this->m_currentZoom = zoom;
+    }
+
+    this->m_lookat = glm::lookAt (this->m_currentEye, this->m_currentCenter, this->m_currentUp);
+
+    if (this->m_isOrthogonal) {
+	this->updateOrthogonalProjection ();
+    }
+}
+
+void Camera::setFov (const float fov) {
+    if (this->m_camera.projection.fov == nullptr || this->m_camera.projection.fov->value == nullptr
+	|| !std::isfinite (fov)) {
+	return;
+    }
+
+    const float clamped = glm::clamp (fov, 1.0f, 179.0f);
+
+    this->m_camera.projection.fov->value->update (clamped, DynamicValue::UpdateSource::Script);
+
+    if (!this->m_isOrthogonal) {
+	this->updatePerspectiveProjection (clamped, this->m_currentZoom);
+    }
+}
+
 void Camera::setOrthogonalProjection (const float width, const float height) {
     this->m_width = width;
     this->m_height = height;
-
-    float nearz = this->m_camera.projection.nearz->value->getFloat ();
-    float farz = this->m_camera.projection.farz->value->getFloat ();
-
-    this->m_projection = glm::ortho<float> (-width / 2.0, width / 2.0, -height / 2.0, height / 2.0, nearz, farz);
-    this->m_projection = glm::translate (this->m_projection, this->getEye ());
     this->m_isOrthogonal = true;
     this->m_isYFlipped = false;
+
+    this->updateOrthogonalProjection ();
 }
+
+void Camera::updateOrthogonalProjection () {
+    const float nearz = this->m_camera.projection.nearz->value->getFloat ();
+    const float farz = this->m_camera.projection.farz->value->getFloat ();
+
+    // The authored eye is the projection's fixed origin. Camera paths and
+    // SceneScript move m_currentEye relative to it; using the animated eye here
+    // would make the 2D view jump whenever a window resize rebuilds the
+    // projection (and would double-apply the camera translation each tick).
+    this->m_projection = CameraProjection::buildOrthogonalProjection (
+	this->m_width, this->m_height, nearz, farz, this->m_camera.configuration.eye, this->getOrthogonalZoom ()
+    );
+}
+
+float Camera::getOrthogonalZoom () const { return this->m_currentZoom > 0.0f ? this->m_currentZoom : 1.0f; }
 
 void Camera::setPerspectiveProjection (const float width, const float height, const bool flipY) {
     this->m_width = width;
@@ -132,7 +210,7 @@ void Camera::setPerspectiveProjection (const float width, const float height, co
     this->m_isOrthogonal = false;
     this->m_isYFlipped = flipY;
 
-    this->updatePerspectiveProjection (this->getFov (), 1.0f);
+    this->updatePerspectiveProjection (this->getFov (), this->m_currentZoom);
 }
 
 void Camera::updatePerspectiveProjection (const float fov, const float zoom) {

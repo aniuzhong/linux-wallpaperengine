@@ -6,7 +6,10 @@
 #include "WallpaperEngine/Data/Utils/ScopeGuard.h"
 #include "WallpaperEngine/Render/Wallpapers/CScene.h"
 
+#include <cmath>
 #include <string>
+
+#include <glm/geometric.hpp>
 
 using namespace WallpaperEngine::Scripting;
 
@@ -67,6 +70,28 @@ JSValue get_fov (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* 
     auto* container = get_opaque (this_val);
 
     return JS_NewFloat64 (ctx, container->getScene ().getScene ().camera.projection.fov->value->getFloat ());
+}
+
+JSValue set_fov (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc != 1 || !JS_IsNumber (argv[0])) {
+	return JS_ThrowTypeError (ctx, "fov expects a number");
+    }
+
+    double value = 0.0;
+
+    if (JS_ToFloat64 (ctx, &value, argv[0]) < 0) {
+	return JS_EXCEPTION;
+    }
+
+    if (!std::isfinite (value)) {
+	return JS_ThrowRangeError (ctx, "fov expects a finite number");
+    }
+
+    auto* container = get_opaque (this_val);
+
+    container->getScene ().getCamera ().setFov (static_cast<float> (value));
+
+    return JS_UNDEFINED;
 }
 
 JSValue get_nearz (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
@@ -322,6 +347,138 @@ JSValue scene_set_value (JSContext* ctx, JSValueConst this_val, int argc, JSValu
     return JS_UNDEFINED;
 }
 
+bool readCameraVec3 (JSContext* ctx, JSValueConst value, glm::vec3& output) {
+    if (!JS_IsObject (value)) {
+	return false;
+    }
+
+    JSValue x = JS_GetPropertyStr (ctx, value, "x");
+    JSValue y = JS_GetPropertyStr (ctx, value, "y");
+    JSValue z = JS_GetPropertyStr (ctx, value, "z");
+
+    const bool valid = JS_IsNumber (x) && JS_IsNumber (y) && JS_IsNumber (z);
+
+    if (valid) {
+	double xValue = 0.0;
+	double yValue = 0.0;
+	double zValue = 0.0;
+
+	JS_ToFloat64 (ctx, &xValue, x);
+	JS_ToFloat64 (ctx, &yValue, y);
+	JS_ToFloat64 (ctx, &zValue, z);
+	output = { static_cast<float> (xValue), static_cast<float> (yValue), static_cast<float> (zValue) };
+    }
+
+    JS_FreeValue (ctx, x);
+    JS_FreeValue (ctx, y);
+    JS_FreeValue (ctx, z);
+
+    return valid;
+}
+
+JSValue makeCameraVec3 (JSContext* ctx, SceneObject& container, const glm::vec3& value) {
+    auto* adapter = container.getEngine ().getAdapters ().vec3.get ();
+    JSValue result = adapter->instantiate ();
+
+    JS_SetPropertyStr (ctx, result, "x", JS_NewFloat64 (ctx, value.x));
+    JS_SetPropertyStr (ctx, result, "y", JS_NewFloat64 (ctx, value.y));
+    JS_SetPropertyStr (ctx, result, "z", JS_NewFloat64 (ctx, value.z));
+
+    return result;
+}
+
+JSValue get_camera_transforms (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* container = get_opaque (this_val);
+    const auto& camera = container->getScene ().getCamera ();
+
+    JSValue result = JS_NewObject (ctx);
+
+    JS_SetPropertyStr (ctx, result, "eye", makeCameraVec3 (ctx, *container, camera.getEye ()));
+    JS_SetPropertyStr (ctx, result, "center", makeCameraVec3 (ctx, *container, camera.getCenter ()));
+    JS_SetPropertyStr (ctx, result, "up", makeCameraVec3 (ctx, *container, camera.getUp ()));
+    JS_SetPropertyStr (ctx, result, "zoom", JS_NewFloat64 (ctx, camera.getZoom ()));
+
+    return result;
+}
+
+JSValue set_camera_transforms (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc != 1 || !JS_IsObject (argv[0])) {
+	return JS_ThrowTypeError (ctx, "setCameraTransforms expects a CameraTransforms object");
+    }
+
+    auto* container = get_opaque (this_val);
+    auto& camera = container->getScene ().getCamera ();
+
+    glm::vec3 eye = camera.getEye ();
+    glm::vec3 center = camera.getCenter ();
+    glm::vec3 up = camera.getUp ();
+
+    JSValue eyeValue = JS_GetPropertyStr (ctx, argv[0], "eye");
+
+    if (!readCameraVec3 (ctx, eyeValue, eye)) {
+	JS_FreeValue (ctx, eyeValue);
+	return JS_ThrowTypeError (ctx, "setCameraTransforms expects eye as a Vec3");
+    }
+
+    JS_FreeValue (ctx, eyeValue);
+
+    JSValue centerValue = JS_GetPropertyStr (ctx, argv[0], "center");
+
+    if (!readCameraVec3 (ctx, centerValue, center)) {
+	JS_FreeValue (ctx, centerValue);
+	return JS_ThrowTypeError (ctx, "setCameraTransforms expects center as a Vec3");
+    }
+
+    JS_FreeValue (ctx, centerValue);
+
+    if (glm::dot (center - eye, center - eye) <= 1e-6f) {
+	return JS_ThrowTypeError (ctx, "setCameraTransforms expects eye and center to differ");
+    }
+
+    // "up" is optional and keeps the current camera roll when omitted.
+    JSValue upValue = JS_GetPropertyStr (ctx, argv[0], "up");
+
+    if (JS_IsObject (upValue)) {
+	if (!readCameraVec3 (ctx, upValue, up)) {
+	    JS_FreeValue (ctx, upValue);
+	    return JS_ThrowTypeError (ctx, "setCameraTransforms expects up as a Vec3");
+	}
+    } else if (!JS_IsUndefined (upValue) && !JS_IsNull (upValue)) {
+	JS_FreeValue (ctx, upValue);
+	return JS_ThrowTypeError (ctx, "setCameraTransforms expects up as a Vec3");
+    }
+
+    JS_FreeValue (ctx, upValue);
+
+    float zoom = camera.getZoom ();
+    JSValue zoomValue = JS_GetPropertyStr (ctx, argv[0], "zoom");
+
+    if (JS_IsNumber (zoomValue)) {
+	double zoomNumber = 0.0;
+
+	if (JS_ToFloat64 (ctx, &zoomNumber, zoomValue) < 0) {
+	    JS_FreeValue (ctx, zoomValue);
+	    return JS_EXCEPTION;
+	}
+
+	if (!std::isfinite (zoomNumber) || zoomNumber <= 0.0) {
+	    JS_FreeValue (ctx, zoomValue);
+	    return JS_ThrowTypeError (ctx, "setCameraTransforms expects zoom to be a positive number");
+	}
+
+	zoom = static_cast<float> (zoomNumber);
+    } else if (!JS_IsUndefined (zoomValue) && !JS_IsNull (zoomValue)) {
+	JS_FreeValue (ctx, zoomValue);
+	return JS_ThrowTypeError (ctx, "setCameraTransforms expects zoom to be a number");
+    }
+
+    JS_FreeValue (ctx, zoomValue);
+
+    camera.setStaticTransforms (eye, center, up, zoom);
+
+    return JS_UNDEFINED;
+}
+
 SceneObject::SceneObject (ScriptEngine& engine, Render::Wallpapers::CScene& scene) :
     m_scene (scene), m_engine (engine), m_classId (0) {
     this->m_definition = { .class_name = "IScene" };
@@ -371,7 +528,7 @@ SceneObject::SceneObject (ScriptEngine& engine, Render::Wallpapers::CScene& scen
     JS_DefinePropertyGetSet (
 	this->m_engine.getContext (), this->m_instance, JS_NewAtom (this->m_engine.getContext (), "fov"),
 	JS_NewCFunction (this->m_engine.getContext (), get_fov, "get", 0),
-	JS_NewCFunction (this->m_engine.getContext (), scene_set_value, "set", 1), JS_PROP_ENUMERABLE
+	JS_NewCFunction (this->m_engine.getContext (), set_fov, "set", 1), JS_PROP_ENUMERABLE
     );
     JS_DefinePropertyGetSet (
 	this->m_engine.getContext (), this->m_instance, JS_NewAtom (this->m_engine.getContext (), "nearz"),
@@ -452,6 +609,16 @@ SceneObject::SceneObject (ScriptEngine& engine, Render::Wallpapers::CScene& scen
     JS_DefinePropertyValueStr (
 	this->m_engine.getContext (), this->m_instance, "sortLayer",
 	JS_NewCFunction (this->m_engine.getContext (), sort_layer, "sortLayer", 2), JS_PROP_ENUMERABLE
+    );
+    JS_DefinePropertyValueStr (
+	this->m_engine.getContext (), this->m_instance, "getCameraTransforms",
+	JS_NewCFunction (this->m_engine.getContext (), get_camera_transforms, "getCameraTransforms", 0),
+	JS_PROP_ENUMERABLE
+    );
+    JS_DefinePropertyValueStr (
+	this->m_engine.getContext (), this->m_instance, "setCameraTransforms",
+	JS_NewCFunction (this->m_engine.getContext (), set_camera_transforms, "setCameraTransforms", 1),
+	JS_PROP_ENUMERABLE
     );
     // TODO: ADD REST OF THE METHODS
 }

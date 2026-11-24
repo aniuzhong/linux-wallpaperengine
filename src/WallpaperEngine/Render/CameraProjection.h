@@ -2,6 +2,7 @@
 
 #include <glm/common.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/vec3.hpp>
 
 namespace WallpaperEngine::Render::CameraProjection {
 /**
@@ -49,5 +50,26 @@ namespace WallpaperEngine::Render::CameraProjection {
     }
 
     return projection;
+}
+
+/**
+ * Builds the orthographic projection used by 2D scenes.
+ *
+ * The projection is centred on the camera window and translated by the
+ * authored camera origin. `zoom` shrinks the visible world region while
+ * keeping that origin fixed, which matches Wallpaper Engine's relative
+ * `CameraTransforms.zoom`. A non-positive zoom is treated as 1.0.
+ */
+[[nodiscard]] inline glm::mat4 buildOrthogonalProjection (
+    const float width, const float height, const float nearz, const float farz, const glm::vec3& eye,
+    const float zoom = 1.0f
+) {
+    const float effectiveZoom = zoom > 0.0f ? zoom : 1.0f;
+    const float halfWidth = width / (2.0f * effectiveZoom);
+    const float halfHeight = height / (2.0f * effectiveZoom);
+
+    glm::mat4 projection = glm::ortho<float> (-halfWidth, halfWidth, -halfHeight, halfHeight, nearz, farz);
+
+    return glm::translate (projection, eye);
 }
 } // namespace WallpaperEngine::Render::CameraProjection

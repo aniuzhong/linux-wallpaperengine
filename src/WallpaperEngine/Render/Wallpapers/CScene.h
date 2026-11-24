@@ -62,6 +62,8 @@ public:
     [[nodiscard]] const glm::vec2* getMousePosition () const;
     [[nodiscard]] const glm::vec2* getMousePositionLast () const;
     [[nodiscard]] const glm::vec2* getMousePositionNormalized () const;
+    /** Pointer position in viewport space (0,0 top-left; 1,1 bottom-right). */
+    [[nodiscard]] const glm::vec2* getMousePositionViewport () const;
     [[nodiscard]] const glm::vec2* getParallaxDisplacement () const;
     [[nodiscard]] const glm::vec2* getParallaxPosition () const;
 

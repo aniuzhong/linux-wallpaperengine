@@ -558,7 +558,7 @@ JSValue vector_subtract (JSContext* ctx, JSValueConst this_val, int argc, JSValu
     VEC_MAGIC_CHECK_EXCEPTION (newContainer, components);
 
     newContainer->value.update (
-	vector_get<components> (ctx, argv[0]) - vector_get<components> (container->value),
+	vector_get<components> (container->value) - vector_get<components> (ctx, argv[0]),
 	DynamicValue::UpdateSource::Initialization
     );
 
@@ -613,7 +613,7 @@ template <int components> JSValue vector_divide (JSContext* ctx, JSValueConst th
     VEC_MAGIC_CHECK_EXCEPTION (newContainer, components);
 
     newContainer->value.update (
-	vector_get<components> (ctx, argv[0]) / vector_get<components> (container->value),
+	vector_get<components> (container->value) / vector_get<components> (ctx, argv[0]),
 	DynamicValue::UpdateSource::Initialization
     );
 
@@ -667,7 +667,7 @@ template <int components> JSValue vector_cross (JSContext* ctx, JSValueConst thi
     VEC_MAGIC_CHECK_EXCEPTION (newContainer, components);
 
     newContainer->value.update (
-	glm::cross (vector_get<components> (ctx, argv[0]), vector_get<components> (container->value)),
+	glm::cross (vector_get<components> (container->value), vector_get<components> (ctx, argv[0])),
 	DynamicValue::UpdateSource::Initialization
     );
 
@@ -700,7 +700,7 @@ template <int components> JSValue vector_mix (JSContext* ctx, JSValueConst this_
     VEC_MAGIC_CHECK_EXCEPTION (newContainer, components);
 
     newContainer->value.update (
-	glm::mix (vector_get<components> (ctx, argv[0]), vector_get<components> (container->value), amount),
+	glm::mix (vector_get<components> (container->value), vector_get<components> (ctx, argv[0]), amount),
 	DynamicValue::UpdateSource::Initialization
     );
 

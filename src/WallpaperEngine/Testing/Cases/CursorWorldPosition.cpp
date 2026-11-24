@@ -69,6 +69,24 @@ TEST_CASE ("cursor world position accounts for vertical camera cropping") {
     CHECK (bottom.y == Catch::Approx (240.0f));
 }
 
+TEST_CASE ("cursor world position follows the zoomed 2D camera window") {
+    // A 2x CameraTransforms.zoom halves the world region under the cursor.
+    // getMousePositionWorld passes Camera::getWidth/Height here, which now
+    // apply the zoom, so edge positions stay inside the visible region.
+    constexpr float shownWidth = kSceneWidth / 2.0f;
+    constexpr float shownHeight = kSceneHeight / 2.0f;
+
+    const glm::vec3 left = cursorWorld (0.0f, 0.5f, shownWidth, shownHeight);
+    const glm::vec3 centre = cursorWorld (0.5f, 0.5f, shownWidth, shownHeight);
+    const glm::vec3 right = cursorWorld (1.0f, 0.5f, shownWidth, shownHeight);
+    const glm::vec3 bottom = cursorWorld (0.5f, 1.0f, shownWidth, shownHeight);
+
+    CHECK (left.x == Catch::Approx (480.0f));
+    CHECK (centre.x == Catch::Approx (960.0f));
+    CHECK (right.x == Catch::Approx (1440.0f));
+    CHECK (bottom.y == Catch::Approx (270.0f));
+}
+
 TEST_CASE ("cursor world position undoes a cropped UV range") {
     // updateMouse stores the mouse in scene UV space. When the render target only
     // shows a sub-rectangle, mapMousePositionToWorld has to recover the viewport

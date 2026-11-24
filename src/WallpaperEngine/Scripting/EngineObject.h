@@ -9,6 +9,16 @@ class CScene;
 }
 namespace WallpaperEngine::Scripting {
 class ScriptEngine;
+
+/**
+ * Resolves the frame delta exposed to scripts.
+ *
+ * Scripts are initialized before the first render loop iteration, when the
+ * delta is still zero. Only that invalid/non-advancing case falls back to a
+ * nominal 60 FPS frame; real high-refresh deltas must pass through unchanged.
+ */
+[[nodiscard]] constexpr float resolveFrameTime (const float delta) { return delta > 1e-6f ? delta : 1.0f / 60.0f; }
+
 class EngineObject {
 public:
     EngineObject (ScriptEngine& engine, Render::Wallpapers::CScene& scene);
