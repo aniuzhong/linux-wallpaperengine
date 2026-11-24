@@ -9,6 +9,7 @@
 #include <cstring>
 #include <iterator>
 #include <optional>
+#include <set>
 #include <sstream>
 
 #include <glm/glm.hpp>
@@ -155,6 +156,8 @@ CImage::CImage (Wallpapers::CScene& scene, const Image& image) :
 	    }
 	}
     }
+
+    this->registerEffectScripts ();
 
     // passes read g_Color4 through a pointer captured during setupUniforms, so it must hold
     // the composed value before setup() runs
@@ -1156,6 +1159,47 @@ const float& CImage::getAlpha () const { return this->m_image.alpha->value->getF
 const glm::vec3& CImage::getColor () const { return this->m_image.color->value->getVec3 (); }
 
 const glm::vec4& CImage::getColor4 () const { return this->m_color4; }
+
+void CImage::registerEffectScripts () {
+    std::set<const DynamicValue*> registered = {};
+
+    for (size_t effectIndex = 0; effectIndex < this->m_image.effects.size (); effectIndex++) {
+	const auto& effect = this->m_image.effects[effectIndex];
+
+	if (effect == nullptr) {
+	    continue;
+	}
+
+	for (size_t passIndex = 0; passIndex < effect->passOverrides.size (); passIndex++) {
+	    const auto& pass = effect->passOverrides[passIndex];
+
+	    if (pass == nullptr) {
+		continue;
+	    }
+
+	    for (const auto& [name, setting] : pass->constants) {
+		if (setting == nullptr || setting->value == nullptr) {
+		    continue;
+		}
+
+		if (!setting->value->getScriptSource ().has_value ()) {
+		    continue;
+		}
+
+		// A single pass override can be shared by multiple effects in the
+		// same layer; never queue the same DynamicValue more than once.
+		if (!registered.insert (setting->value.get ()).second) {
+		    continue;
+		}
+
+		const std::string key = "effect_" + std::to_string (this->getId ()) + "_" + std::to_string (effectIndex)
+		    + "_" + std::to_string (passIndex) + "_" + name;
+
+		this->registerValueScript (key, *setting->value);
+	    }
+	}
+    }
+}
 
 void CImage::updateColor4 () {
     // when the material sets the VERSION combo, genericimage2 swaps g_Brightness/g_UserAlpha for a single

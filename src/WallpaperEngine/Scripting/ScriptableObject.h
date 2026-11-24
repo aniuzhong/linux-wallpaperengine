@@ -50,6 +50,13 @@ public:
 protected:
     void registerProperty (const std::string& name, DynamicValue& value);
 
+    /**
+     * Queues a script attached to an arbitrary value that is not exposed as a
+     * layer property (for example an effect-pass constant). The caller must
+     * provide a key that is unique for this object.
+     */
+    void registerValueScript (const std::string& key, DynamicValue& value);
+
 private:
     std::map<std::string, PropertyEntry> m_properties;
     WallpaperEngine::Render::Objects::CRenderable* m_renderable = nullptr;

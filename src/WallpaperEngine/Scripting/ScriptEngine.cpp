@@ -324,10 +324,14 @@ static bool jsToDynamicValue (JSContext* ctx, JSValue val, DynamicValue& source)
 	    return true;
 	}
 
+	JS_ToFloat64 (ctx, &zVal, z);
+
 	if (!JS_IsNumber (w)) {
 	    source.update (glm::vec3 (xVal, yVal, zVal), DynamicValue::UpdateSource::Script);
 	    return true;
 	}
+
+	JS_ToFloat64 (ctx, &wVal, w);
 
 	source.update (glm::vec4 (xVal, yVal, zVal, wVal), DynamicValue::UpdateSource::Script);
 	return true;

@@ -83,6 +83,7 @@ protected:
 
 private:
     bool loadPuppetMesh (const glm::vec2& size);
+    void registerEffectScripts ();
     void updateColor4 ();
     void updatePuppetPositionBuffer (const glm::vec2& size);
     void setupPuppetGeometryCallback (Effects::CPass* pass) const;

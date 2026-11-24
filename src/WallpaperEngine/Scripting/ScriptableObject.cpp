@@ -127,3 +127,7 @@ void ScriptableObject::registerProperty (const std::string& name, DynamicValue& 
 
     this->getScene ().getScriptEngine ().queueScript (inserted.first->second.key, inserted.first->second.value, *this);
 }
+
+void ScriptableObject::registerValueScript (const std::string& key, DynamicValue& value) {
+    this->getScene ().getScriptEngine ().queueScript (key, value, *this);
+}
