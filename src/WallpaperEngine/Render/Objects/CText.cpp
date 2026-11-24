@@ -140,6 +140,16 @@ CText::CText (Wallpapers::CScene& scene, const Text& text) :
     this->registerProperty ("visible", *text.visible->value);
     this->registerProperty ("pointSize", *text.pointSize->value);
     this->registerProperty ("text", *text.text->value);
+
+    // Origin is registered by CObject.
+    this->registerAnimations (
+	{
+	    text.scale.get (),
+	    text.color.get (),
+	    text.alpha.get (),
+	    text.pointSize.get (),
+	}
+    );
 }
 
 CText::~CText () {

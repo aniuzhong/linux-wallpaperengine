@@ -471,6 +471,9 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Render/Helpers/ContextAware.cpp
     src/WallpaperEngine/Render/Helpers/ContextAware.h
 
+    src/WallpaperEngine/Render/AnimationRuntime.h
+    src/WallpaperEngine/Render/AnimationRuntime.cpp
+
     src/WallpaperEngine/Render/CWallpaper.h
     src/WallpaperEngine/Render/CWallpaper.cpp
     src/WallpaperEngine/Render/WallpaperState.h
@@ -536,6 +539,8 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Data/Model/Effect.h
     src/WallpaperEngine/Data/Model/Model.h
     src/WallpaperEngine/Data/Model/ModelFile.h
+    src/WallpaperEngine/Data/Model/Animation.h
+    src/WallpaperEngine/Data/Model/Animation.cpp
     src/WallpaperEngine/Data/Model/CameraPath.h
     src/WallpaperEngine/Data/Model/CameraPath.cpp
     src/WallpaperEngine/Data/Model/UserSetting.h
@@ -543,11 +548,14 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Data/Model/DynamicValue.cpp
     src/WallpaperEngine/Data/Model/Property.h
     src/WallpaperEngine/Data/Utils/TypeCaster.h
+    src/WallpaperEngine/Data/Utils/Bezier.h
     src/WallpaperEngine/Data/Utils/BinaryReader.cpp
     src/WallpaperEngine/Data/Utils/BinaryReader.h
     src/WallpaperEngine/Data/Utils/MemoryStream.h
     src/WallpaperEngine/Data/Utils/SFINAE.h
     src/WallpaperEngine/Data/Utils/StringParsing.h
+    src/WallpaperEngine/Data/Parsers/AnimationParser.h
+    src/WallpaperEngine/Data/Parsers/AnimationParser.cpp
     src/WallpaperEngine/Data/Parsers/DynamicValueParser.h
     src/WallpaperEngine/Data/Parsers/DynamicValueParser.cpp
     src/WallpaperEngine/Data/Parsers/EffectParser.cpp
@@ -631,6 +639,7 @@ if(BUILD_TESTING)
         ${COMMON_SOURCES}
 
         src/WallpaperEngine/Testing/Cases/Example.cpp
+        src/WallpaperEngine/Testing/Cases/Animation.cpp
         src/WallpaperEngine/Testing/Cases/AlbumTexture.cpp
         src/WallpaperEngine/Testing/Cases/JsonOptional.cpp
         src/WallpaperEngine/Testing/Cases/MediaSourceUpdate.cpp

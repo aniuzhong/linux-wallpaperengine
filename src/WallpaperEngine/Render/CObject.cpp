@@ -16,7 +16,9 @@ using namespace WallpaperEngine::Render;
 using namespace WallpaperEngine::Render::Wallpapers;
 
 CObject::CObject (Wallpapers::CScene& scene, const Object& object) :
-    Helpers::ContextAware (scene), m_scene (scene), m_object (object) { }
+    Helpers::ContextAware (scene), m_scene (scene), m_object (object) {
+    this->registerAnimations ({ this->m_object.origin.get () });
+}
 
 void CObject::setup () { }
 void CObject::render () { }
@@ -38,6 +40,35 @@ bool CObject::isVisibleInTree () const {
     }
 
     return true;
+}
+
+void CObject::registerAnimations (const std::initializer_list<UserSetting*> settings) {
+    // Dynamic layers have a negative id and their data is owned by
+    // m_dynamicObjects. They are skipped until AnimationRuntime can unregister
+    // entries when the layer is destroyed.
+    if (this->m_object.id <= 0) {
+	return;
+    }
+
+    AnimationRuntime& runtime = this->m_scene.getAnimationRuntime ();
+
+    for (UserSetting* setting : settings) {
+	if (setting != nullptr) {
+	    runtime.registerSetting (*setting);
+	}
+    }
+}
+
+void CObject::registerShaderConstants (const ShaderConstantMap& constants) {
+    if (this->m_object.id > 0) {
+	this->m_scene.getAnimationRuntime ().registerSettings (constants);
+    }
+}
+
+void CObject::registerMaterial (const Material& material) {
+    for (const auto& pass : material.passes) {
+	this->registerShaderConstants (pass->constants);
+    }
 }
 
 Wallpapers::CScene& CObject::getScene () const { return this->m_scene; }

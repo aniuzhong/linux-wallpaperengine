@@ -3,6 +3,7 @@
 #include <memory>
 #include <optional>
 
+#include "Animation.h"
 #include "DynamicValue.h"
 #include "Types.h"
 
@@ -19,6 +20,8 @@ struct UserSetting {
     PropertySharedPtr property;
     /** Condition required for this setting, this should be possible to run in JS' V8 */
     std::optional<ConditionInfo> condition;
+    /** Timeline animation bound to this setting, if the scene authored one */
+    std::optional<Animation> animation;
     /** TODO: Value might come from a script and not have conditions, implement this later */
 };
 } // namespace WallpaperEngine::Data::Model

@@ -28,6 +28,26 @@ CParticle::CParticle (Wallpapers::CScene& scene, const Particle& particle) :
     this->registerProperty ("visible", *particle.visible->value);
     this->registerProperty ("parallaxDepth", *particle.parallaxDepth->value);
 
+    // Origin is registered by CObject.
+    this->registerAnimations (
+	{
+	    particle.scale.get (),
+	    particle.angles.get (),
+	    particle.instanceOverride.alpha.get (),
+	    particle.instanceOverride.size.get (),
+	    particle.instanceOverride.lifetime.get (),
+	    particle.instanceOverride.rate.get (),
+	    particle.instanceOverride.speed.get (),
+	    particle.instanceOverride.count.get (),
+	    particle.instanceOverride.color.get (),
+	    particle.instanceOverride.colorn.get (),
+	}
+    );
+
+    if (particle.material != nullptr && particle.material->material != nullptr) {
+	this->registerMaterial (*particle.material->material);
+    }
+
     this->detectTexture ();
     // Initialize random number generator with time-based seed
     std::random_device rd;

@@ -55,7 +55,20 @@ private:
 
 CModel::CModel (Wallpapers::CScene& scene, const ModelObject& model) :
     CObject (scene, model), CRenderable (scene, model, sectionMaterial (model.file->sections.front (), model.skin)),
-    m_model (model) { }
+    m_model (model) {
+    // Origin is registered by CObject; models read these two every frame.
+    this->registerAnimations ({ model.groupScale.get (), model.groupAngles.get () });
+
+    if (model.file != nullptr) {
+	for (const auto& section : model.file->sections) {
+	    for (const auto& material : section.materials) {
+		if (material != nullptr) {
+		    this->registerMaterial (*material);
+		}
+	    }
+	}
+    }
+}
 
 CModel::~CModel () {
     for (const auto& section : this->m_sections) {

@@ -158,6 +158,21 @@ CScene::CScene (
 	this->createObject (*object);
     }
 
+    // light objects have no render object of their own, but their settings are
+    // still regular UserSettings and can carry timeline animations
+    for (const auto& object : scene->objects) {
+	if (!object->is<LightObject> () || object->id <= 0) {
+	    continue;
+	}
+
+	const auto& light = *object->as<LightObject> ();
+
+	this->m_animationRuntime.registerSetting (light.origin);
+	this->m_animationRuntime.registerSetting (light.color);
+	this->m_animationRuntime.registerSetting (light.intensity);
+	this->m_animationRuntime.registerSetting (light.radius);
+    }
+
     // copy over objects by render order
     for (const auto& object : scene->objects) {
 	this->addObjectToRenderOrder (*object);
@@ -477,6 +492,7 @@ void CScene::updateLights () {
 
 ScriptEngine& CScene::getScriptEngine () const { return *this->m_scriptEngine; }
 Camera& CScene::getCamera () const { return *this->m_camera; }
+AnimationRuntime& CScene::getAnimationRuntime () { return this->m_animationRuntime; }
 
 void CScene::renderFrame (const glm::ivec4& viewport) {
     // ensure the virtual mouse position is up to date
@@ -546,6 +562,10 @@ void CScene::renderFrame (const glm::ivec4& viewport) {
 
     // advance the camera path animation before drawing anything
     this->m_camera->tick ();
+
+    // drive authored timeline animations after scripts/camera have run, so the
+    // render pass below sees the current transform values
+    this->m_animationRuntime.tick (this->getTime ());
 
     // depth order the 3d objects for the current camera pose; translucent
     // surfaces only composite correctly when they are drawn back-to-front

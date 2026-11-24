@@ -46,6 +46,7 @@ public:
 	Initialization = 0,
 	Script = 1,
 	User = 2,
+	Animation = 3,
     };
 
     DynamicValue () = default;

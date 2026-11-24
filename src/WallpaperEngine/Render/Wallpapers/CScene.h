@@ -3,6 +3,7 @@
 #include <array>
 #include <optional>
 
+#include "WallpaperEngine/Render/AnimationRuntime.h"
 #include "WallpaperEngine/Render/Camera.h"
 
 #include "WallpaperEngine/Render/CWallpaper.h"
@@ -32,6 +33,7 @@ public:
 
     [[nodiscard]] Scripting::ScriptEngine& getScriptEngine () const;
     [[nodiscard]] Camera& getCamera () const;
+    [[nodiscard]] AnimationRuntime& getAnimationRuntime ();
 
     [[nodiscard]] const Scene& getScene () const;
 
@@ -130,6 +132,7 @@ private:
 
     std::unique_ptr<Scripting::ScriptEngine> m_scriptEngine;
     std::unique_ptr<Camera> m_camera;
+    AnimationRuntime m_animationRuntime;
     /** World-space size of the camera projection (what objects position themselves against) */
     float m_projectionWidth = 0.0f;
     float m_projectionHeight = 0.0f;

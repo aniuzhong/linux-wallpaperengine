@@ -1,4 +1,5 @@
 #include "UserSettingParser.h"
+#include "AnimationParser.h"
 #include "DynamicValueParser.h"
 
 #include "WallpaperEngine/Data/Model/Property.h"
@@ -12,8 +13,14 @@ UserSettingParser::parse (const json& data, const Properties& properties, bool e
     auto value = DynamicValueParser::parse (data, properties, expectColor, forceString);
     PropertySharedPtr property;
     std::optional<ConditionInfo> condition = std::nullopt;
+    std::optional<Animation> animation = std::nullopt;
 
     if (data.is_object ()) {
+	if (const auto animationIt = data.find ("animation");
+	    animationIt != data.end () && animationIt->is_object () && !animationIt->is_null ()) {
+	    animation = AnimationParser::parse (*animationIt);
+	}
+
 	const auto user = data.optional ("user");
 
 	if (user.has_value () && !user->is_null ()) {
@@ -51,5 +58,6 @@ UserSettingParser::parse (const json& data, const Properties& properties, bool e
 	.value = std::move (value),
 	.property = property,
 	.condition = condition,
+	.animation = std::move (animation),
     });
 }

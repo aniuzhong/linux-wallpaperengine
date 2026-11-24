@@ -1,5 +1,6 @@
 #pragma once
 
+#include <initializer_list>
 #include <string>
 
 #include <glm/glm.hpp>
@@ -40,6 +41,20 @@ public:
     [[nodiscard]] const Object& getObject () const;
 
 protected:
+    /**
+     * Registers timeline animations for this object's settings.
+     * Dynamic layers use negative ids and are skipped for now: their backing
+     * data is destroyed with the layer, so they need an explicit unregister
+     * path before they can participate.
+     */
+    void registerAnimations (std::initializer_list<UserSetting*> settings);
+
+    /** Registers every timeline animation in a shader constant map. */
+    void registerShaderConstants (const ShaderConstantMap& constants);
+
+    /** Registers every timeline animation in a material's passes. */
+    void registerMaterial (const Material& material);
+
     /**
      * Composed origin/scale/angle after folding the object's full parent chain
      * on top of its own local transform.

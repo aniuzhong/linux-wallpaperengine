@@ -123,6 +123,39 @@ CImage::CImage (Wallpapers::CScene& scene, const Image& image) :
     this->registerProperty ("color", *image.color->value);
     this->registerProperty ("parallaxDepth", *image.parallaxDepth->value);
 
+    // Origin is registered by CObject. Images keep their own scale/angles
+    // settings; the group copies on ObjectData are not used by localTransform.
+    this->registerAnimations (
+	{
+	    image.scale.get (),
+	    image.angles.get (),
+	    image.color.get (),
+	    image.alpha.get (),
+	    image.parallaxDepth.get (),
+	    image.brightness.get (),
+	}
+    );
+
+    if (image.model != nullptr && image.model->material != nullptr) {
+	this->registerMaterial (*image.model->material);
+    }
+
+    for (const auto& effect : image.effects) {
+	for (const auto& pass : effect->passOverrides) {
+	    this->registerShaderConstants (pass->constants);
+	}
+
+	if (effect->effect == nullptr) {
+	    continue;
+	}
+
+	for (const auto& pass : effect->effect->passes) {
+	    if (pass->material.has_value () && *pass->material != nullptr) {
+		this->registerMaterial (**pass->material);
+	    }
+	}
+    }
+
     // passes read g_Color4 through a pointer captured during setupUniforms, so it must hold
     // the composed value before setup() runs
     this->updateColor4 ();
