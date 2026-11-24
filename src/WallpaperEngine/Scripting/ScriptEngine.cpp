@@ -1274,6 +1274,11 @@ void ScriptEngine::notifyMediaUpdate (const Media::MediaSource::MediaInfo& media
 	    continue;
 	}
 
+	// Media handlers run outside the normal tick loop; bind thisLayer (and
+	// later thisObject) to the module being dispatched instead of leaving the
+	// globals pointing at whichever module ran last.
+	this->activateModule (module);
+
 	bool failed = false;
 
 	const auto dispatch = [&] (const char* handler, JSValue* args) {
@@ -1298,6 +1303,8 @@ void ScriptEngine::notifyMediaUpdate (const Media::MediaSource::MediaInfo& media
 	    this->disableModule (module, "media handler failure: " + module.key);
 	}
     }
+
+    this->m_runningModule = nullptr;
 
     // free all created objects as we don't keep a ref to them anymore
     JS_FreeValue (ctx, propertiesEvent);
