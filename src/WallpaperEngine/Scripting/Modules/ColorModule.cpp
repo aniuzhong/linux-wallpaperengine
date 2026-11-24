@@ -1,5 +1,7 @@
 #include "ColorModule.h"
 
+#include <cmath>
+
 #include "WallpaperEngine/Scripting/ScriptEngine.h"
 
 using namespace WallpaperEngine::Scripting::Modules;
@@ -61,6 +63,13 @@ JSValue wecolor_rgb2hsv (JSContext* ctx, JSValueConst this_val, int argc, JSValu
 	h += 360.0f;
     }
 
+    // WEColor follows SceneScript's normalised HSV convention (h in 0..1).
+    h /= 360.0f;
+
+    JS_FreeValue (ctx, x);
+    JS_FreeValue (ctx, y);
+    JS_FreeValue (ctx, z);
+
     const auto it = colorModules.find (magic);
 
     if (it == colorModules.end ()) {
@@ -95,14 +104,22 @@ JSValue wecolor_hsv2rgb (JSContext* ctx, JSValueConst this_val, int argc, JSValu
     JS_ToFloat64 (ctx, &yVal, y);
     JS_ToFloat64 (ctx, &zVal, z);
 
-    // conversion code from https://gist.github.com/yoggy/8999625
-    float r, g, b; // 0.0-1.0
+    // SceneScript HSV is normalised: hue 0..1, saturation/value 0..1.
+    // Convert the hue to the six 60-degree sectors used by the conversion
+    // below, wrapping negative or overflowing values first.
+    double hue = std::fmod (xVal * 6.0, 6.0);
 
-    int hi = (int)(xVal / 60.0f) % 6;
-    float f = (xVal / 60.0f) - hi;
+    if (hue < 0.0) {
+	hue += 6.0;
+    }
+
+    int hi = static_cast<int> (hue) % 6;
+    auto f = static_cast<float> (hue - std::floor (hue));
     float p = zVal * (1.0f - yVal);
     float q = zVal * (1.0f - yVal * f);
     float t = zVal * (1.0f - yVal * (1.0f - f));
+
+    float r, g, b; // 0.0-1.0
 
     switch (hi) {
 	case 0:
@@ -127,6 +144,10 @@ JSValue wecolor_hsv2rgb (JSContext* ctx, JSValueConst this_val, int argc, JSValu
 	    r = 0, g = 0, b = 0;
 	    break;
     }
+
+    JS_FreeValue (ctx, x);
+    JS_FreeValue (ctx, y);
+    JS_FreeValue (ctx, z);
 
     const auto it = colorModules.find (magic);
 
