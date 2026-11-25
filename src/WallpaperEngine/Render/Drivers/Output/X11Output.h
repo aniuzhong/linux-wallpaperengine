@@ -1,44 +1,59 @@
 #pragma once
 
-#include <glm/vec4.hpp>
-#include <map>
-#include <string>
-
 #include <X11/Xlib.h>
 #include <X11/extensions/Xrandr.h>
 
+#include <vector>
+
 #include "Output.h"
-#include "WallpaperEngine/Render/Drivers/VideoDriver.h"
 
 namespace WallpaperEngine::Render::Drivers::Output {
-class X11Output final : public Output {
+/**
+ * Shared X11 output base: display, XRandR screen discovery and viewports.
+ *
+ * Presentation is implemented by subclasses, which must call initialize() once
+ * their own construction is complete:
+ *  - X11RootPixmapOutput writes the rendered frame into the root pixmap.
+ */
+class X11Output : public Output {
 public:
     X11Output (ApplicationContext& context, VideoDriver& driver);
     ~X11Output () override;
 
-    void reset () override;
-
-    bool renderVFlip () const override;
+    void reset () override final;
     bool renderMultiple () const override;
-    bool haveImageBuffer () const override;
-    void* getImageBuffer () const override;
-    uint32_t getImageBufferSize () const override;
-    void updateRender () const override;
 
-private:
-    void loadScreenInfo ();
+protected:
+    /**
+     * Connects to the X server, loads the layout and initializes presentation.
+     *
+     * This calls into the presentation hooks, so it is only valid while the
+     * most-derived object is fully constructed (i.e. from the derived
+     * constructor body or from reset()).
+     */
+    void initialize ();
+    void teardown ();
+    // Subclasses must call this before releasing their presentation resources
+    // in their destructor so an X I/O error callback cannot re-enter reset().
+    void beginDestruction ();
+
+    void openDisplay ();
+    void closeDisplay ();
+    void loadLayout ();
+    void freeViewports ();
     void discoverOutputs (XRRScreenResources* screenResources);
     void validateOutputs () const;
-    void initX11Background ();
-    void free ();
+
+    virtual void initPresentation () = 0;
+    virtual void freePresentation () = 0;
 
     Display* m_display = nullptr;
-    Pixmap m_pixmap;
-    Window m_root;
-    GC m_gc;
-    char* m_imageData = nullptr;
-    uint32_t m_imageSize = 0;
-    XImage* m_image = nullptr;
+    Window m_root = None;
     std::vector<OutputViewport*> m_screens = {};
+
+private:
+    // Set while the object is being destroyed so X error callbacks cannot call
+    // into presentation hooks of an already-destroyed subclass.
+    bool m_destroying = false;
 };
 } // namespace WallpaperEngine::Render::Drivers::Output

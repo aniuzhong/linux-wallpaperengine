@@ -1,37 +1,16 @@
 #include "X11Output.h"
+
 #include "GLFWOutputViewport.h"
 #include "WallpaperEngine/Logging/Log.h"
 
-#include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/Xrandr.h>
 
-#include <cstdlib>
-#include <fcntl.h>
-#include <string>
-#include <unistd.h>
+#include <ranges>
 
 using namespace WallpaperEngine::Render::Drivers::Output;
 
-/**
- * Signals the wrapper that the first frame has actually been submitted to X11.
- * The path is fixed (per XDG runtime dir) so the wrapper and engine do not need
- * to exchange another environment variable. The wrapper removes the file before
- * starting the engine and after the engine exits.
- */
-static void signalFirstFrame () {
-    const char* runtimeDir = getenv ("XDG_RUNTIME_DIR");
-    if (runtimeDir == nullptr || *runtimeDir == '\0') {
-	runtimeDir = "/tmp";
-    }
-
-    const std::string path = std::string (runtimeDir) + "/wallpaperengine.ready";
-    const int fd = open (path.c_str (), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0600);
-    if (fd >= 0) {
-	close (fd);
-    }
-}
-
+namespace {
 void CustomXIOErrorExitHandler (Display* dsp, void* userdata) {
     const auto context = static_cast<X11Output*> (userdata);
 
@@ -52,30 +31,61 @@ int CustomXIOErrorHandler (Display* dsp) {
 
     return 0;
 }
+} // namespace
 
-X11Output::X11Output (ApplicationContext& context, VideoDriver& driver) :
-    Output (context, driver), m_display (nullptr), m_pixmap (None), m_root (None), m_gc (None), m_imageData (nullptr),
-    m_imageSize (0), m_image (nullptr) {
+X11Output::X11Output (ApplicationContext& context, VideoDriver& driver) : Output (context, driver) {
     // do not use previous handler, it might stop the app under weird circumstances
     XSetErrorHandler (CustomXErrorHandler);
     XSetIOErrorHandler (CustomXIOErrorHandler);
-
-    this->loadScreenInfo ();
 }
 
-X11Output::~X11Output () { this->free (); }
+X11Output::~X11Output () {
+    this->beginDestruction ();
+    this->teardown ();
+}
+
+void X11Output::beginDestruction () { this->m_destroying = true; }
+
+void X11Output::initialize () {
+    this->openDisplay ();
+    this->loadLayout ();
+    this->initPresentation ();
+}
+
+void X11Output::teardown () {
+    // free presentation before the display used by it is closed; during
+    // destruction the derived destructor has already done so
+    if (!this->m_destroying) {
+	this->freePresentation ();
+    }
+
+    this->freeViewports ();
+    this->closeDisplay ();
+}
 
 void X11Output::reset () {
-    // first free whatever we have right now
-    this->free ();
-    // re-load screen info
-    this->loadScreenInfo ();
-    // do the same for the detector
+    // an X I/O error can be reported while the connection is being closed
+    if (this->m_destroying) {
+	return;
+    }
+
+    this->teardown ();
+    this->initialize ();
+
     // TODO: BRING BACK THIS FUNCTIONALITY
     // this->m_driver.getFullscreenDetector ().reset ();
 }
 
-void X11Output::free () {
+void X11Output::openDisplay () {
+    this->m_display = XOpenDisplay (nullptr);
+#ifdef HAVE_XSETIOERROREXITHANDLER
+    if (this->m_display != nullptr) {
+	XSetIOErrorExitHandler (this->m_display, CustomXIOErrorExitHandler, this);
+    }
+#endif /* HAVE_XSETIOERROREXITHANDLER */
+}
+
+void X11Output::freeViewports () {
     // delete owned viewport objects (m_viewports holds non-owning aliases)
     for (const auto& screen : this->m_screens) {
 	delete screen;
@@ -83,31 +93,23 @@ void X11Output::free () {
 
     this->m_screens.clear ();
     this->m_viewports.clear ();
-
-    // free all the resources we've got
-    XDestroyImage (this->m_image);
-    XFreeGC (this->m_display, this->m_gc);
-    XFreePixmap (this->m_display, this->m_pixmap);
-    delete this->m_imageData;
-    XCloseDisplay (this->m_display);
 }
 
-void* X11Output::getImageBuffer () const { return this->m_imageData; }
+void X11Output::closeDisplay () {
+    if (this->m_display != nullptr) {
+	XCloseDisplay (this->m_display);
+	this->m_display = nullptr;
+    }
 
-bool X11Output::renderVFlip () const { return false; }
+    this->m_root = None;
+    this->m_fullWidth = 0;
+    this->m_fullHeight = 0;
+}
 
-bool X11Output::renderMultiple () const { return this->m_viewports.size () > 1; }
-
-bool X11Output::haveImageBuffer () const { return true; }
-
-uint32_t X11Output::getImageBufferSize () const { return this->m_imageSize; }
-
-void X11Output::loadScreenInfo () {
-    this->m_display = XOpenDisplay (nullptr);
-    // set the error handling to try and recover from X disconnections
-#ifdef HAVE_XSETIOERROREXITHANDLER
-    XSetIOErrorExitHandler (this->m_display, CustomXIOErrorExitHandler, this);
-#endif /* HAVE_XSETIOERROREXITHANDLER */
+void X11Output::loadLayout () {
+    if (this->m_display == nullptr) {
+	return;
+    }
 
     int xrandr_result, xrandr_error;
 
@@ -129,7 +131,6 @@ void X11Output::loadScreenInfo () {
     discoverOutputs (screenResources);
     XRRFreeScreenResources (screenResources);
     validateOutputs ();
-    initX11Background ();
 }
 
 void X11Output::discoverOutputs (XRRScreenResources* screenResources) {
@@ -228,51 +229,4 @@ void X11Output::validateOutputs () const {
     }
 }
 
-void X11Output::initX11Background () {
-    // create pixmap so we can draw things in there
-    this->m_pixmap = XCreatePixmap (this->m_display, this->m_root, this->m_fullWidth, this->m_fullHeight, 24);
-    this->m_gc = XCreateGC (this->m_display, this->m_pixmap, 0, nullptr);
-    // pre-fill it with black
-    XFillRectangle (this->m_display, this->m_pixmap, this->m_gc, 0, 0, this->m_fullWidth, this->m_fullHeight);
-    // set the window background as our pixmap
-    XSetWindowBackgroundPixmap (this->m_display, this->m_root, this->m_pixmap);
-    // allocate space for the image's data
-    this->m_imageSize = this->m_fullWidth * this->m_fullHeight * 4;
-    this->m_imageData = new char[this->m_fullWidth * this->m_fullHeight * 4];
-    // create an image so we can copy it over
-    this->m_image = XCreateImage (
-	this->m_display, CopyFromParent, 24, ZPixmap, 0, this->m_imageData, this->m_fullWidth, this->m_fullHeight, 32, 0
-    );
-    // setup driver's render changing the window's size
-    this->m_driver.resizeWindow ({ this->m_fullWidth, this->m_fullHeight });
-}
-
-void X11Output::updateRender () const {
-    // put the image back into the screen
-    XPutImage (
-	this->m_display, this->m_pixmap, this->m_gc, this->m_image, 0, 0, 0, 0, this->m_fullWidth, this->m_fullHeight
-    );
-
-    // _XROOTPMAP_ID & ESETROOT_PMAP_ID allow other programs (compositors) to
-    // edit the background. Without these, other programs will clear the screen.
-    // it also forces the compositor to refresh the background (tested with picom)
-    const Atom prop_root = XInternAtom (this->m_display, "_XROOTPMAP_ID", False);
-    const Atom prop_esetroot = XInternAtom (this->m_display, "ESETROOT_PMAP_ID", False);
-    XChangeProperty (
-	this->m_display, this->m_root, prop_root, XA_PIXMAP, 32, PropModeReplace, (unsigned char*)&this->m_pixmap, 1
-    );
-    XChangeProperty (
-	this->m_display, this->m_root, prop_esetroot, XA_PIXMAP, 32, PropModeReplace, (unsigned char*)&this->m_pixmap, 1
-    );
-
-    XClearWindow (this->m_display, this->m_root);
-    XFlush (this->m_display);
-
-    // The wrapper keeps the native desktop opaque until this file appears, so
-    // the transparent desktop never exposes the previous engine's last frame.
-    static bool firstFrameSignaled = false;
-    if (!firstFrameSignaled) {
-	signalFirstFrame ();
-	firstFrameSignaled = true;
-    }
-}
+bool X11Output::renderMultiple () const { return this->m_viewports.size () > 1; }

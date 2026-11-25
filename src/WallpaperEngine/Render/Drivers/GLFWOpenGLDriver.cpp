@@ -4,7 +4,7 @@
 #include "WallpaperEngine/Render/Drivers/Output/GLFWWindowOutput.h"
 #include "WallpaperEngine/Render/Utils/GLUtils.h"
 #ifdef ENABLE_X11
-#include "WallpaperEngine/Render/Drivers/Output/X11Output.h"
+#include "WallpaperEngine/Render/Drivers/Output/X11RootPixmapOutput.h"
 #endif
 
 #define GLFW_EXPOSE_NATIVE_X11
@@ -70,7 +70,7 @@ GLFWOpenGLDriver::GLFWOpenGLDriver (const char* windowTitle, ApplicationContext&
     }
 #ifdef ENABLE_X11
     else {
-	m_output = new WallpaperEngine::Render::Drivers::Output::X11Output (context, *this);
+	m_output = new WallpaperEngine::Render::Drivers::Output::X11RootPixmapOutput (context, *this);
     }
 #else
     else {
