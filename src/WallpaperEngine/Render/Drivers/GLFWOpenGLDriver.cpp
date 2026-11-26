@@ -4,7 +4,12 @@
 #include "WallpaperEngine/Render/Drivers/Output/GLFWWindowOutput.h"
 #include "WallpaperEngine/Render/Utils/GLUtils.h"
 #ifdef ENABLE_X11
+#include "WallpaperEngine/Render/Drivers/Output/X11DesktopWindowOutput.h"
 #include "WallpaperEngine/Render/Drivers/Output/X11RootPixmapOutput.h"
+
+#include <X11/Xatom.h>
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
 #endif
 
 #define GLFW_EXPOSE_NATIVE_X11
@@ -69,7 +74,9 @@ GLFWOpenGLDriver::GLFWOpenGLDriver (const char* windowTitle, ApplicationContext&
 	m_output = new WallpaperEngine::Render::Drivers::Output::GLFWWindowOutput (context, *this);
     }
 #ifdef ENABLE_X11
-    else {
+    else if (context.settings.render.x11Presentation == WallpaperEngine::Application::X11PresentationDesktopWindow) {
+	m_output = new WallpaperEngine::Render::Drivers::Output::X11DesktopWindowOutput (context, *this);
+    } else {
 	m_output = new WallpaperEngine::Render::Drivers::Output::X11RootPixmapOutput (context, *this);
     }
 #else
@@ -79,7 +86,11 @@ GLFWOpenGLDriver::GLFWOpenGLDriver (const char* windowTitle, ApplicationContext&
 #endif
 }
 
-GLFWOpenGLDriver::~GLFWOpenGLDriver () { glfwTerminate (); }
+GLFWOpenGLDriver::~GLFWOpenGLDriver () {
+    delete this->m_output;
+    this->m_output = nullptr;
+    glfwTerminate ();
+}
 
 Output::Output& GLFWOpenGLDriver::getOutput () { return *this->m_output; }
 
@@ -97,6 +108,74 @@ void GLFWOpenGLDriver::resizeWindow (glm::ivec4 sizeandpos) {
 void GLFWOpenGLDriver::showWindow () { glfwShowWindow (this->m_window); }
 
 void GLFWOpenGLDriver::hideWindow () { glfwHideWindow (this->m_window); }
+
+bool GLFWOpenGLDriver::configureAsDesktopWindow () {
+#ifdef ENABLE_X11
+    if (this->m_window == nullptr) {
+	return false;
+    }
+
+    glfwSetWindowAttrib (this->m_window, GLFW_DECORATED, GLFW_FALSE);
+    glfwSetWindowAttrib (this->m_window, GLFW_RESIZABLE, GLFW_FALSE);
+    glfwSetWindowAttrib (this->m_window, GLFW_FLOATING, GLFW_FALSE);
+
+    Display* display = glfwGetX11Display ();
+    const Window window = glfwGetX11Window (this->m_window);
+    if (display == nullptr || window == None) {
+	sLog.error ("Cannot configure the GLFW window as an X11 desktop window");
+	return false;
+    }
+
+    const Atom typeProperty = XInternAtom (display, "_NET_WM_WINDOW_TYPE", False);
+    const Atom desktopType = XInternAtom (display, "_NET_WM_WINDOW_TYPE_DESKTOP", False);
+    XChangeProperty (display, window, typeProperty, XA_ATOM, 32, PropModeReplace, (unsigned char*)&desktopType, 1);
+
+    const Atom stateProperty = XInternAtom (display, "_NET_WM_STATE", False);
+    const Atom states[] = {
+	XInternAtom (display, "_NET_WM_STATE_BELOW", False),
+	XInternAtom (display, "_NET_WM_STATE_SKIP_TASKBAR", False),
+	XInternAtom (display, "_NET_WM_STATE_SKIP_PAGER", False),
+    };
+    XChangeProperty (display, window, stateProperty, XA_ATOM, 32, PropModeReplace, (unsigned char*)states, 3);
+
+    const Atom desktopProperty = XInternAtom (display, "_NET_WM_DESKTOP", False);
+    // Xlib expects a long array for 32-bit properties, even on LP64.
+    const unsigned long allDesktops = 0xFFFFFFFFul;
+    XChangeProperty (
+	display, window, desktopProperty, XA_CARDINAL, 32, PropModeReplace, (unsigned char*)&allDesktops, 1
+    );
+
+    XWMHints hints {};
+    hints.flags = InputHint;
+    hints.input = False;
+    XSetWMHints (display, window, &hints);
+
+    XFlush (display);
+    return true;
+#else
+    return false;
+#endif
+}
+
+void GLFWOpenGLDriver::lowerWindow () {
+#ifdef ENABLE_X11
+    if (this->m_window == nullptr) {
+	return;
+    }
+
+    Display* display = glfwGetX11Display ();
+    const Window window = glfwGetX11Window (this->m_window);
+    if (display == nullptr || window == None) {
+	return;
+    }
+
+    // Keep the wallpaper below the desktop shell's own window so icons and
+    // clicks stay on the shell. Desktop-type windows are normally stacked in
+    // map order, which would put this window above an already-running shell.
+    XLowerWindow (display, window);
+    XFlush (display);
+#endif
+}
 
 glm::ivec2 GLFWOpenGLDriver::getFramebufferSize () const {
     glm::ivec2 size;
@@ -157,6 +236,7 @@ void GLFWOpenGLDriver::dispatchEventQueue () {
     this->m_output->updateRender ();
     // do buffer swapping first
     glfwSwapBuffers (this->m_window);
+    this->m_output->onFramePresented ();
     // poll for events
     glfwPollEvents ();
     // increase frame counter

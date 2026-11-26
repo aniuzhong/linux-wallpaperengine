@@ -15,6 +15,7 @@ public:
     void* getImageBuffer () const override;
     uint32_t getImageBufferSize () const override;
     void updateRender () const override;
+    void onFramePresented () const override;
 
 private:
     void repositionWindow () const;

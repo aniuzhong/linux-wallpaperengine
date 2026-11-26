@@ -28,6 +28,8 @@ public:
     void resizeWindow (glm::ivec4 sizeandpos) override;
     void showWindow () override;
     void hideWindow () override;
+    bool configureAsDesktopWindow () override;
+    void lowerWindow () override;
     [[nodiscard]] glm::ivec2 getFramebufferSize () const override;
     [[nodiscard]] uint32_t getFrameCounter () const override;
     void dispatchEventQueue () override;

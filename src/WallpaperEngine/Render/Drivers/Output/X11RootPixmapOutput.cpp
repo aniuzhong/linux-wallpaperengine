@@ -5,33 +5,7 @@
 
 #include <X11/Xatom.h>
 
-#include <cstdlib>
-#include <fcntl.h>
-#include <string>
-#include <unistd.h>
-
 using namespace WallpaperEngine::Render::Drivers::Output;
-
-namespace {
-/**
- * Signals the wrapper that the first frame has actually been submitted to X11.
- * The path is fixed (per XDG runtime dir) so the wrapper and engine do not need
- * to exchange another environment variable. The wrapper removes the file before
- * starting the engine and after the engine exits.
- */
-void signalFirstFrame () {
-    const char* runtimeDir = getenv ("XDG_RUNTIME_DIR");
-    if (runtimeDir == nullptr || *runtimeDir == '\0') {
-	runtimeDir = "/tmp";
-    }
-
-    const std::string path = std::string (runtimeDir) + "/wallpaperengine.ready";
-    const int fd = open (path.c_str (), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0600);
-    if (fd >= 0) {
-	close (fd);
-    }
-}
-} // namespace
 
 X11RootPixmapOutput::X11RootPixmapOutput (ApplicationContext& context, VideoDriver& driver) :
     X11Output (context, driver) {
@@ -147,9 +121,5 @@ void X11RootPixmapOutput::updateRender () const {
 
     // The wrapper keeps the native desktop opaque until this file appears, so
     // the transparent desktop never exposes the previous engine's last frame.
-    static bool firstFrameSignaled = false;
-    if (!firstFrameSignaled) {
-	signalFirstFrame ();
-	firstFrameSignaled = true;
-    }
+    this->notifyFirstFrame ();
 }

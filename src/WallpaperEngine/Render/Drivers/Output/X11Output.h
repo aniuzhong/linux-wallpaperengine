@@ -14,6 +14,7 @@ namespace WallpaperEngine::Render::Drivers::Output {
  * Presentation is implemented by subclasses, which must call initialize() once
  * their own construction is complete:
  *  - X11RootPixmapOutput writes the rendered frame into the root pixmap.
+ *  - X11DesktopWindowOutput presents the rendered frame in a desktop window.
  */
 class X11Output : public Output {
 public:

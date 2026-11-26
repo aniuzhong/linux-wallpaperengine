@@ -64,3 +64,5 @@ void GLFWWindowOutput::updateRender () const {
     // update the default viewport
     this->m_viewports["default"]->viewport = { 0, 0, this->m_fullWidth, this->m_fullHeight };
 }
+
+void GLFWWindowOutput::onFramePresented () const { this->notifyFirstFrame (); }

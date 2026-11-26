@@ -55,6 +55,17 @@ public:
      */
     virtual void hideWindow () = 0;
     /**
+     * Configures the driver window as an X11 desktop window.
+     * Only meaningful for X11 desktop background output.
+     * @return true when the window was configured successfully
+     */
+    virtual bool configureAsDesktopWindow () { return false; }
+    /**
+     * Moves the driver window to the bottom of the stacking order.
+     * Only meaningful for outputs that keep the window below the desktop shell.
+     */
+    virtual void lowerWindow () { }
+    /**
      * @return The size of the framebuffer available for the driver
      */
     [[nodiscard]] virtual glm::ivec2 getFramebufferSize () const = 0;

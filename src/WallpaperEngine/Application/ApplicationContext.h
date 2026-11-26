@@ -19,6 +19,11 @@
 
 namespace WallpaperEngine::Application {
 using namespace WallpaperEngine::Data::Assets;
+
+/** X11 background presentation backends accepted by --x11-presentation */
+inline constexpr const char* X11PresentationRootPixmap = "root-pixmap";
+inline constexpr const char* X11PresentationDesktopWindow = "desktop-window";
+
 /**
  * Application information as parsed off the command line arguments
  */
@@ -111,6 +116,8 @@ public:
 	struct {
 	    /** The mode to run the background in */
 	    WINDOW_MODE mode;
+	    /** X11 background presentation backend: root-pixmap or desktop-window */
+	    std::string x11Presentation;
 	    /** Maximum FPS */
 	    int maximumFPS;
 	    /** Hardware decoder passed to libmpv */
@@ -207,6 +214,7 @@ public:
         },
         .render = {
             .mode = NORMAL_WINDOW,
+            .x11Presentation = X11PresentationRootPixmap,
             .maximumFPS = 30,
             .hwdec = "auto",
             .renderScale = 1.0f,

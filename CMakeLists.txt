@@ -289,6 +289,8 @@ if(X11_SUPPORT_FOUND)
         src/WallpaperEngine/Render/Drivers/Output/X11Output.h
         src/WallpaperEngine/Render/Drivers/Output/X11RootPixmapOutput.cpp
         src/WallpaperEngine/Render/Drivers/Output/X11RootPixmapOutput.h
+        src/WallpaperEngine/Render/Drivers/Output/X11DesktopWindowOutput.cpp
+        src/WallpaperEngine/Render/Drivers/Output/X11DesktopWindowOutput.h
         src/WallpaperEngine/Render/Drivers/Detectors/X11FullScreenDetector.cpp
         src/WallpaperEngine/Render/Drivers/Detectors/X11FullScreenDetector.h)
     SET(X11_INCLUDES

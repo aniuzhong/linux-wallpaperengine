@@ -292,6 +292,14 @@ void ApplicationContext::loadSettingsFromArgv () {
 	    this->settings.render.window.geometry.w = strtol (delim3 + 1, nullptr, 10);
 	})
 	.append ();
+    backgroundGroup.add_argument ("--x11-presentation")
+	.help (
+	    "X11 background presentation backend: root-pixmap (default) or desktop-window. "
+	    "Only used with --screen-root/--screen-span"
+	)
+	.choices (X11PresentationRootPixmap, X11PresentationDesktopWindow)
+	.default_value (X11PresentationRootPixmap)
+	.store_into (this->settings.render.x11Presentation);
     backgroundMode.add_argument ("-r", "--screen-root")
 	.help ("The screen the following settings will have an effect on")
 	.action ([this, &lastScreen] (const std::string& value) -> void {
@@ -694,6 +702,11 @@ void ApplicationContext::loadSettingsFromArgv () {
 	// perform some extra validation on the inputs
 	this->validateAssets ();
 	this->validateScreenshot ();
+
+	if (this->settings.render.x11Presentation != X11PresentationRootPixmap
+	    && this->settings.render.mode != DESKTOP_BACKGROUND) {
+	    sLog.error ("--x11-presentation is only used with --screen-root/--screen-span; ignoring it");
+	}
 
 	// setup application state
 	this->state.general.keepRunning = true;
