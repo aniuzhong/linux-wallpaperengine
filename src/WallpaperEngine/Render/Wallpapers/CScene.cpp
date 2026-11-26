@@ -29,8 +29,9 @@ using namespace WallpaperEngine::Render::Wallpapers;
 
 CScene::CScene (
     const Wallpaper& wallpaper, RenderContext& context, AudioContext& audioContext,
-    const WallpaperState::TextureUVsScaling& scalingMode, const uint32_t& clampMode, const glm::ivec2& renderSize
-) : CWallpaper (wallpaper, context, audioContext, scalingMode, clampMode, renderSize) {
+    const WallpaperState::TextureUVsScaling& scalingMode, const uint32_t& clampMode, const glm::ivec2& renderSize,
+    const glm::ivec2& viewportSize
+) : CWallpaper (wallpaper, context, audioContext, scalingMode, clampMode, renderSize), m_viewportSize (viewportSize) {
     // caller should check this, if not a std::bad_cast is good to throw
     auto scene = wallpaper.as<Scene> ();
 
@@ -39,14 +40,25 @@ CScene::CScene (
     // setup the scene camera
     this->m_camera = std::make_unique<Camera> (*this, scene->camera);
 
+    // Scenes render into a per-wallpaper target (one viewport for a single
+    // screen, the span bounding box for a span group).  Projection fallbacks
+    // must use that target's aspect ratio, not the whole X11 output: with two
+    // independent per-screen wallpapers the output is the combined desktop and
+    // would squeeze each scene horizontally into its own screen.
+    const auto& output = this->getContext ().getOutput ();
+    const glm::ivec2 fallbackSize = this->m_viewportSize.x > 0 && this->m_viewportSize.y > 0
+	? this->m_viewportSize
+	: glm::ivec2 { output.getFullWidth (), output.getFullHeight () };
+
     float width = static_cast<float> (scene->camera.projection.width);
     float height = static_cast<float> (scene->camera.projection.height);
     const bool isPerspective = scene->camera.projection.isPerspective;
 
-    // 3D scenes have no authored projection size; render at the output resolution
+    // 3D scenes have no authored projection size; render at the per-wallpaper
+    // viewport resolution.
     if (isPerspective) {
-	width = static_cast<float> (this->getContext ().getOutput ().getFullWidth ());
-	height = static_cast<float> (this->getContext ().getOutput ().getFullHeight ());
+	width = static_cast<float> (fallbackSize.x);
+	height = static_cast<float> (fallbackSize.y);
     } else if (scene->camera.projection.isAuto) {
 	// detect size if the orthogonal project is auto
 	glm::vec2 maxExtent = { 0.0f, 0.0f };
@@ -72,9 +84,9 @@ CScene::CScene (
 	    width = maxExtent.x * 2.0f;
 	    height = maxExtent.y * 2.0f;
 	} else {
-	    width = static_cast<float> (this->getContext ().getOutput ().getFullWidth ());
-	    height = static_cast<float> (this->getContext ().getOutput ().getFullHeight ());
-	    sLog.debug ("Auto projection: falling back to screen resolution ", width, "x", height);
+	    width = static_cast<float> (fallbackSize.x);
+	    height = static_cast<float> (fallbackSize.y);
+	    sLog.debug ("Auto projection: falling back to viewport resolution ", width, "x", height);
 	}
     }
 
@@ -863,6 +875,10 @@ const Properties& CScene::getUserProperties () const { return this->m_wallpaperD
 const Project& CScene::getProject () const { return this->m_wallpaperData.project; }
 
 glm::ivec2 CScene::getScreenResolution () const {
+    if (this->m_viewportSize.x > 0 && this->m_viewportSize.y > 0) {
+	return this->m_viewportSize;
+    }
+
     const auto& output = this->getContext ().getOutput ();
 
     return { output.getFullWidth (), output.getFullHeight () };

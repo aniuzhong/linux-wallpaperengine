@@ -347,11 +347,11 @@ std::shared_ptr<const CFBO> CWallpaper::getFBO () const { return this->m_sceneFB
 std::unique_ptr<CWallpaper> CWallpaper::fromWallpaper (
     const Wallpaper& wallpaper, RenderContext& context, AudioContext& audioContext,
     WebBrowser::WebBrowserContext* browserContext, const WallpaperState::TextureUVsScaling& scalingMode,
-    const uint32_t& clampMode, const glm::ivec2& renderSize
+    const uint32_t& clampMode, const glm::ivec2& renderSize, const glm::ivec2& viewportSize
 ) {
     if (wallpaper.is<Scene> ()) {
 	return std::make_unique<WallpaperEngine::Render::Wallpapers::CScene> (
-	    wallpaper, context, audioContext, scalingMode, clampMode, renderSize
+	    wallpaper, context, audioContext, scalingMode, clampMode, renderSize, viewportSize
 	);
     }
 

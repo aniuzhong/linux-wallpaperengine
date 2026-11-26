@@ -473,7 +473,8 @@ void WallpaperApplication::advancePlaylist (
 		screen,
 		WallpaperEngine::Render::CWallpaper::fromWallpaper (
 		    *this->m_backgrounds[screen]->wallpaper, *this->m_renderContext, *this->m_audioContext,
-		    this->m_browserContext.get (), scaling, clamp, this->renderSizeForScreen (viewportSize)
+		    this->m_browserContext.get (), scaling, clamp, this->renderSizeForScreen (viewportSize),
+		    viewportSize
 		)
 	    );
 	}
@@ -784,7 +785,7 @@ void WallpaperApplication::prepareOutputs () {
 	    background,
 	    WallpaperEngine::Render::CWallpaper::fromWallpaper (
 		*info->wallpaper, *m_renderContext, *m_audioContext, m_browserContext.get (), scaling, clamp,
-		this->renderSizeForScreen (viewportSize)
+		this->renderSizeForScreen (viewportSize), viewportSize
 	    )
 	);
     }
@@ -844,7 +845,8 @@ void WallpaperApplication::prepareOutputs () {
 	// at the group's combined bounding box scaled by --render-scale
 	auto sharedWallpaper = WallpaperEngine::Render::CWallpaper::fromWallpaper (
 	    *bgIt->second->wallpaper, *m_renderContext, *m_audioContext, m_browserContext.get (), spanGroup.scaling,
-	    spanGroup.clamp, this->renderSizeForScreen ({ spanInfo.totalBounds.z, spanInfo.totalBounds.w })
+	    spanGroup.clamp, this->renderSizeForScreen ({ spanInfo.totalBounds.z, spanInfo.totalBounds.w }),
+	    { spanInfo.totalBounds.z, spanInfo.totalBounds.w }
 	);
 
 	// Convert to shared_ptr so it can be registered for multiple viewports

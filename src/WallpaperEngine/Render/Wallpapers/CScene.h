@@ -26,7 +26,7 @@ public:
     CScene (
 	const Wallpaper& wallpaper, RenderContext& context, AudioContext& audioContext,
 	const WallpaperState::TextureUVsScaling& scalingMode, const uint32_t& clampMode,
-	const glm::ivec2& renderSize = {}
+	const glm::ivec2& renderSize = {}, const glm::ivec2& viewportSize = {}
     );
 
     ~CScene () override;
@@ -141,6 +141,8 @@ private:
     /** Pixel size the scene renders at (output viewport * render scale) */
     float m_renderWidth = 0.0f;
     float m_renderHeight = 0.0f;
+    /** Logical viewport size (unscaled) this scene renders for */
+    glm::ivec2 m_viewportSize = {};
     /** Texel sizes of the scene FBO, consumed by effect shaders (g_TexelSize) */
     glm::vec2 m_texelSize = {};
     glm::vec2 m_texelSizeHalf = {};
