@@ -1,6 +1,7 @@
 #include "WallpaperEngine/Render/Objects/CImage.h"
 #include "WallpaperEngine/Render/Objects/CModel.h"
 #include "WallpaperEngine/Render/Objects/CParticle.h"
+#include "WallpaperEngine/Render/Objects/CScriptHost.h"
 #include "WallpaperEngine/Render/Objects/CSound.h"
 #include "WallpaperEngine/Render/Objects/CText.h"
 
@@ -336,15 +337,8 @@ Render::CObject* CScene::dispatchObjectType (const Object& object) {
 	renderObject = new Objects::CSound (*this, *object.as<Sound> ());
     } else if (object.is<Text> ()) {
 	renderObject = new Objects::CText (*this, *object.as<Text> ());
-    } else if (object.is<CameraObject> ()) {
-	// camera objects carry no geometry; their pose/path was consumed by the
-	// parser before the scene started
-	return nullptr;
     } else if (object.is<ModelObject> ()) {
 	renderObject = new Objects::CModel (*this, *object.as<ModelObject> ());
-    } else if (object.is<LightObject> ()) {
-	// lights carry no visual; their state feeds shader uniforms in a later slice
-	return nullptr;
     } else if (object.is<Particle> ()) {
 	const auto& particleData = *object.as<Particle> ();
 
@@ -360,8 +354,12 @@ Render::CObject* CScene::dispatchObjectType (const Object& object) {
 
 	renderObject = new Objects::CParticle (*this, particleData);
     } else {
-	sLog.error ("Unknown object type, creating placeholder, empty object: ", object.id);
-	renderObject = new CObject (*this, object);
+	// Layers without a renderer of their own still need a scene-graph node:
+	// group/container objects take part in the parent transform chain, and
+	// cameras, lights and groups can all carry SceneScripts. Camera pose/fov
+	// are snapshotted by the parser before scripts run, so for cameras this
+	// only exposes the layer and its scripted properties.
+	renderObject = new Objects::CScriptHost (*this, object);
     }
 
     try {

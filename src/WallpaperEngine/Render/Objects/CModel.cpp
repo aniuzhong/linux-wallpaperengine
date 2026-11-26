@@ -55,7 +55,10 @@ private:
 
 CModel::CModel (Wallpapers::CScene& scene, const ModelObject& model) :
     CObject (scene, model), CRenderable (scene, model, sectionMaterial (model.file->sections.front (), model.skin)),
-    m_model (model) {
+    Scripting::ScriptableObject (scene, model), m_model (model) {
+    // replay texture-animation requests made by scripts during base construction
+    this->attachRenderable (this);
+
     // Origin is registered by CObject; models read these two every frame.
     this->registerAnimations ({ model.groupScale.get (), model.groupAngles.get () });
 

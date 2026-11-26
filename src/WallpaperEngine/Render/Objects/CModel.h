@@ -7,6 +7,7 @@
 
 #include "WallpaperEngine/Data/Model/ModelFile.h"
 #include "WallpaperEngine/Data/Model/Object.h"
+#include "WallpaperEngine/Scripting/ScriptableObject.h"
 
 #include <glm/vec3.hpp>
 #include <numeric>
@@ -16,7 +17,7 @@ using namespace WallpaperEngine;
 using namespace WallpaperEngine::Render;
 
 namespace WallpaperEngine::Render::Objects {
-class CModel final : public CRenderable {
+class CModel final : public CRenderable, public Scripting::ScriptableObject {
     friend CObject;
 
 public:
