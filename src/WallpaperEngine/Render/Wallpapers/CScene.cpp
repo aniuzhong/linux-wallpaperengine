@@ -163,7 +163,6 @@ CScene::CScene (
     const glm::vec3 clearColor = scene->colors.clear->value->getVec3 ();
 
     this->m_clearColor = clearColor;
-    glClearColor (clearColor.r, clearColor.g, clearColor.b, 1.0f);
 
     // create all objects based off their dependencies
     for (const auto& object : scene->objects) {
@@ -621,6 +620,11 @@ void CScene::renderFrame (const glm::ivec4& viewport) {
     // depth clear is ignored while the depth mask is off (the last pass of a
     // frame may leave it disabled, e.g. translucent model materials)
     glDepthMask (GL_TRUE);
+    // Each wallpaper owns its clear color.  glClearColor is global GL state, so
+    // it must be set for this scene every frame: with multiple independent
+    // screens the last scene constructed would otherwise define the background
+    // of every other scene.
+    glClearColor (this->m_clearColor.r, this->m_clearColor.g, this->m_clearColor.b, 1.0f);
     glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     for (const auto& cur : this->m_objectsByRenderOrder) {
