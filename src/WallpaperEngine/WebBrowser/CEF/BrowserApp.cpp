@@ -79,6 +79,12 @@ void BrowserApp::OnBeforeCommandLineProcessing (const CefString& process_type, C
 	"--disable-features",
 	"IsolateOrigins,HardwareMediaKeyHandling,WebContentsOcclusion,RendererCodeIntegrityEnabled,site-per-process"
     );
+    // CEF off-screen rendering starts with Chromium's GPU blocklist enabled,
+    // which falls back to software compositing/canvas on many Linux drivers.
+    // Canvas-heavy web wallpapers (large off-screen buffers, filters) then
+    // take minutes per frame and never present a picture. This is a wallpaper
+    // renderer, so prefer the GPU even when the blocklist is conservative.
+    command_line->AppendSwitch ("ignore-gpu-blocklist");
     command_line->AppendSwitch ("--disable-gpu-shader-disk-cache");
     command_line->AppendSwitch ("--disable-site-isolation-trials");
     command_line->AppendSwitch ("--disable-web-security");

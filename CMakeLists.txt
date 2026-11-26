@@ -330,6 +330,16 @@ configure_file(
 # re-run configuration (regenerating the header) whenever the .js changes
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${WPENGINE_BUILTINS_JS}")
 
+# Embed the web wallpaper API shim (webapi.js) the same way: the JS stays in
+# its own file while the binary gets a generated header with the raw string.
+set(WPENGINE_WEB_API_JS "${CMAKE_CURRENT_SOURCE_DIR}/src/WallpaperEngine/WebBrowser/CEF/resources/webapi.js")
+file(READ "${WPENGINE_WEB_API_JS}" WPENGINE_WEB_API_SCRIPT)
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/WallpaperEngine/WebBrowser/CEF/resources/WebApi.generated.h.in"
+    "${WPENGINE_GENERATED_DIR}/WallpaperEngine/WebBrowser/CEF/WebApi.generated.h"
+    @ONLY)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${WPENGINE_WEB_API_JS}")
+
 include_directories(
     ${WPENGINE_GENERATED_DIR}
     src

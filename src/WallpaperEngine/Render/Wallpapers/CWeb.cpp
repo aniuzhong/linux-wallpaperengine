@@ -4,10 +4,15 @@
 #include "CWeb.h"
 #include "WallpaperEngine/WebBrowser/CEF/WPSchemeHandlerFactory.h"
 
+#include "WallpaperEngine/Data/JSON.h"
 #include "WallpaperEngine/Data/Model/Project.h"
+#include "WallpaperEngine/Data/Model/Property.h"
 #include "WallpaperEngine/Data/Model/Wallpaper.h"
 #include "WallpaperEngine/Logging/Log.h"
 
+#include <iomanip>
+#include <locale>
+#include <sstream>
 #include <unistd.h>
 
 using namespace WallpaperEngine::Render;
@@ -15,6 +20,91 @@ using namespace WallpaperEngine::Render::Wallpapers;
 
 using namespace WallpaperEngine::WebBrowser;
 using namespace WallpaperEngine::WebBrowser::CEF;
+
+namespace {
+using WallpaperEngine::Data::JSON::JSON;
+using WallpaperEngine::Data::Model::DynamicValue;
+using WallpaperEngine::Data::Model::Properties;
+
+/**
+ * Formats the components of a vector the way Wallpaper Engine's web API does:
+ * space-separated numbers in the 0.0 - 1.0 range. Color properties are sent as
+ * a three-component string (the alpha channel is not exposed to web wallpapers).
+ */
+std::string formatVector (const float x, const float y, const float z = 0.0f, const bool includeZ = false) {
+    std::ostringstream stream;
+
+    stream.imbue (std::locale::classic ());
+    stream << std::setprecision (9) << x << " " << y;
+
+    if (includeZ) {
+	stream << " " << z;
+    }
+
+    return stream.str ();
+}
+
+/**
+ * Serializes the project's user properties into the object shape expected by
+ * wallpaperPropertyListener.applyUserProperties (each entry has a value field).
+ */
+std::string serializeWebProperties (const Properties& properties) {
+    JSON result = JSON::object ();
+
+    for (const auto& [name, property] : properties) {
+	if (property == nullptr) {
+	    continue;
+	}
+
+	JSON entry = JSON::object ();
+
+	switch (property->getType ()) {
+	    case DynamicValue::Null:
+		entry["value"] = "";
+		break;
+	    case DynamicValue::Boolean:
+		entry["value"] = property->getBool ();
+		break;
+	    case DynamicValue::Int:
+		entry["value"] = property->getInt ();
+		break;
+	    case DynamicValue::Float:
+		entry["value"] = property->getFloat ();
+		break;
+	    case DynamicValue::Vec2:
+		{
+		    const glm::vec2 value = property->getVec2 ();
+		    entry["value"] = formatVector (value.x, value.y);
+		    break;
+		}
+	    case DynamicValue::Vec3:
+		{
+		    const glm::vec3 value = property->getVec3 ();
+		    entry["value"] = formatVector (value.x, value.y, value.z, true);
+		    break;
+		}
+	    case DynamicValue::Vec4:
+		{
+		    // color properties are RGBA vectors internally but the web API only
+		    // exposes the RGB components as a space-separated string
+		    const glm::vec4 value = property->getVec4 ();
+		    entry["value"] = formatVector (value.x, value.y, value.z, true);
+		    break;
+		}
+	    case DynamicValue::String:
+		entry["value"] = property->getString ();
+		break;
+	    default:
+		entry["value"] = property->getString ();
+		break;
+	}
+
+	result[name] = std::move (entry);
+    }
+
+    return result.dump ();
+}
+} // namespace
 
 CWeb::CWeb (
     const Wallpaper& wallpaper, RenderContext& context, AudioContext& audioContext, WebBrowserContext& browserContext,
@@ -33,11 +123,15 @@ CWeb::CWeb (
     // should follow --fps instead of forcing every web wallpaper to 60
     browserSettings.windowless_frame_rate = std::min (60, context.getApp ().getContext ().settings.render.maximumFPS);
 
-    this->m_client = new WebBrowser::CEF::BrowserClient (m_renderHandler);
-    // directory-based projects open from disk: pages build file:/// URLs from
-    // user properties (images, presets) and Chromium refuses those loads from
-    // the wp<id>:// origin; packaged items have no physical path and keep
-    // using the scheme handler
+    this->m_client = new WebBrowser::CEF::BrowserClient (
+	m_renderHandler, serializeWebProperties (this->getWeb ().project.properties),
+	context.getApp ().getContext ().settings.render.maximumFPS
+    );
+    // Directory-based projects stay on file:// so pages can load user-chosen
+    // files (file properties) from disk. The injected web API wraps
+    // history.pushState/replaceState so single-page routers (Angular, ...)
+    // do not abort when Chromium rejects file:// history changes. Packaged
+    // projects have no physical path and use the custom scheme instead.
     std::string htmlURL;
 
     try {
@@ -46,6 +140,7 @@ CWeb::CWeb (
 	htmlURL = WPSchemeHandlerFactory::generateSchemeName (this->getWeb ().project.workshopId) + "://root/"
 	    + this->getWeb ().filename;
     }
+
     this->m_browser
 	= CefBrowserHost::CreateBrowserSync (window_info, this->m_client, htmlURL, browserSettings, nullptr, nullptr);
 }

@@ -1,0 +1,7 @@
+// This file is auto-generated from webapi.js by CMake (configure_file). Do not edit.
+#pragma once
+
+namespace WallpaperEngine::WebBrowser::CEF {
+inline constexpr const char* WEB_API_SCRIPT = R"JS(
+@WPENGINE_WEB_API_SCRIPT@)JS";
+} // namespace WallpaperEngine::WebBrowser::CEF
