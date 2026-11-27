@@ -67,12 +67,10 @@ private:
 	GLuint vao = GL_NONE;
 	GLuint vertexBuffer = GL_NONE;
 	GLuint indexBuffer = GL_NONE;
-	/** Number of floats per vertex, decided by the section's attribute mask */
-	uint32_t stride = 0;
+	/** Resolved vertex layout for the section */
+	MeshVertexLayout layout = {};
 	/** Index count to draw */
 	size_t indexCount = 0;
-	/** Attribute mask used at bind time */
-	uint32_t attrMask = 0;
     };
 
     void setupSections ();

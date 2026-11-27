@@ -515,6 +515,8 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Render/Objects/CImage.cpp
     src/WallpaperEngine/Render/Objects/CModel.h
     src/WallpaperEngine/Render/Objects/CModel.cpp
+    src/WallpaperEngine/Render/Objects/Puppet.h
+    src/WallpaperEngine/Render/Objects/Puppet.cpp
     src/WallpaperEngine/Render/Objects/CScriptHost.h
     src/WallpaperEngine/Render/Objects/CScriptHost.cpp
     src/WallpaperEngine/Render/Objects/CSound.h
@@ -555,6 +557,7 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Data/Model/Effect.h
     src/WallpaperEngine/Data/Model/Model.h
     src/WallpaperEngine/Data/Model/ModelFile.h
+    src/WallpaperEngine/Data/Model/Puppet.h
     src/WallpaperEngine/Data/Model/Animation.h
     src/WallpaperEngine/Data/Model/Animation.cpp
     src/WallpaperEngine/Data/Model/CameraPath.h
@@ -567,6 +570,7 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Data/Utils/Bezier.h
     src/WallpaperEngine/Data/Utils/BinaryReader.cpp
     src/WallpaperEngine/Data/Utils/BinaryReader.h
+    src/WallpaperEngine/Data/Utils/BufferReader.h
     src/WallpaperEngine/Data/Utils/MemoryStream.h
     src/WallpaperEngine/Data/Utils/SFINAE.h
     src/WallpaperEngine/Data/Utils/StringParsing.h
@@ -590,6 +594,8 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Data/Parsers/ModelParser.h
     src/WallpaperEngine/Data/Parsers/MeshParser.cpp
     src/WallpaperEngine/Data/Parsers/MeshParser.h
+    src/WallpaperEngine/Data/Parsers/PuppetParser.cpp
+    src/WallpaperEngine/Data/Parsers/PuppetParser.h
     src/WallpaperEngine/Data/Parsers/CameraPathParser.cpp
     src/WallpaperEngine/Data/Parsers/CameraPathParser.h
     src/WallpaperEngine/Data/Parsers/ShaderConstantParser.cpp

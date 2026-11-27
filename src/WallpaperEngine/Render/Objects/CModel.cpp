@@ -158,10 +158,10 @@ void CModel::setup () {
     // enough here
     this->m_texture = std::make_shared<WhiteTexture> ();
 
-    // skinned MDLV0023 meshes need bone palette support that is not implemented
-    // yet; skip the whole model instead of uploading a mismatched vertex layout
+    // skinned meshes need bone palette support that is not implemented yet;
+    // skip the whole model instead of uploading a mismatched vertex layout
     for (const auto& section : this->m_model.file->sections) {
-	if (section.attrMask == MeshFormat_Skinned) {
+	if (section.layout.skinOffset >= 0) {
 	    sLog.error ("Skinned model ", this->m_model.file->version, " is not supported yet, skipping object");
 	    return;
 	}
@@ -224,7 +224,6 @@ void CModel::setupSections () {
     this->m_sections.reserve (sectionCount);
 
     for (const auto& section : this->m_model.file->sections) {
-	const MeshVertexLayout layout = meshVertexLayout (section.attrMask);
 	// The Y-flipped perspective camera (uniform FBO convention on every
 	// output, see CScene) mirrors Y, which reverses triangle winding on
 	// screen. Reverse the index order in that case so front faces stay front
@@ -241,9 +240,8 @@ void CModel::setupSections () {
 	    .vao = GL_NONE,
 	    .vertexBuffer = GL_NONE,
 	    .indexBuffer = GL_NONE,
-	    .stride = layout.stride,
+	    .layout = section.layout,
 	    .indexCount = section.indices.size (),
-	    .attrMask = section.attrMask,
 	};
 
 	glGenVertexArrays (1, &buffers.vao);
@@ -343,7 +341,7 @@ void CModel::render (const std::shared_ptr<const CFBO>& destination, const glm::
 
 	    pass->setGeometryCallback (
 		[&buffers, pass] () {
-		    const MeshVertexLayout layout = meshVertexLayout (buffers.attrMask);
+		    const MeshVertexLayout& layout = buffers.layout;
 		    const GLuint program = pass->getProgramID ();
 
 		    // attribute pointers capture whatever buffer is bound at

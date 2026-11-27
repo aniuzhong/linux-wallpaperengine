@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "Types.h"
+#include "UserSetting.h"
 
 namespace WallpaperEngine::Data::Model {
 
