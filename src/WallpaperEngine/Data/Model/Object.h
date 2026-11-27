@@ -210,6 +210,8 @@ struct LightObjectData {
     UserSettingUniquePtr intensity;
     /** Falloff radius, the light contributes nothing past it */
     UserSettingUniquePtr radius;
+    /** Falloff exponent used by the PBR point-light shading path */
+    UserSettingUniquePtr exponent;
 };
 
 class LightObject : public Object, public LightObjectData {

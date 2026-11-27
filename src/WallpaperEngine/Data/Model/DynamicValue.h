@@ -130,6 +130,13 @@ public:
      */
     [[nodiscard]] const std::optional<std::string>& getScriptSource () const;
     /**
+     * Marks a value that stores radians internally but is exposed to SceneScript
+     * in degrees (layer angles). Script writes are converted back to radians.
+     */
+    void setAngular (bool angular) { this->m_angular = angular; }
+    /** @return Whether script-facing values are expressed in degrees */
+    [[nodiscard]] bool isAngular () const { return this->m_angular; }
+    /**
      * @return The script properties associated with this dynamic value (if any)
      */
     [[nodiscard]] std::map<std::string, UserSettingUniquePtr>& getProperties ();
@@ -148,6 +155,8 @@ private:
     std::list<std::function<void (const DynamicValue&, UpdateSource)>> m_listeners = {};
     std::vector<std::function<void ()>> m_connections = {};
     std::optional<std::string> m_scriptSource = std::nullopt;
+    /** Layer angles are stored in radians but SceneScript reads/writes degrees */
+    bool m_angular = false;
 
     glm::vec4 m_vec4 = {};
     glm::vec3 m_vec3 = {};

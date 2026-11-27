@@ -249,6 +249,7 @@ LightObjectUniquePtr ObjectParser::parseLight (const JSON& it, const Project& pr
 	    .color = it.user ("color", project.properties, glm::vec3 (1.0f)),
 	    .intensity = it.user ("intensity", project.properties, 1.0f),
 	    .radius = it.user ("radius", project.properties, 10.0f),
+	    .exponent = it.user ("exponent", project.properties, 1.0f),
 	}
     );
 }

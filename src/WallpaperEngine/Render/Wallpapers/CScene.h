@@ -76,9 +76,30 @@ public:
     bool destroyLayer (CObject* object);
     void sortLayer (CObject* object, int index);
 
-    /** Fixed number of light slots WE materials receive (g_LightsPosition/g_LightsColorRadius) */
+    /** Maximum light slots per type exposed by the legacy and PBR shader uniforms */
     static constexpr int kMaxShaderLights = 4;
 
+    /**
+     * Light data for the PBR shader family (generic3/generic4/genericimage3/
+     * genericimage4). Those shaders address lights through per-type arrays
+     * sized by the LIGHTS_POINT/LIGHTS_DIRECTIONAL macros, unlike the legacy
+     * generic/generic2 path that uses g_LightsPosition/g_LightsColorRadius.
+     */
+    struct ShaderLightState {
+	/** Number of compiled slots per light type, each capped at kMaxShaderLights */
+	int pointCount = 0;
+	int directionalCount = 0;
+	/** rgb = color * intensity, a = falloff radius (consumed by LightingV1) */
+	std::array<glm::vec4, kMaxShaderLights> pointColors = {};
+	/** xyz = world position, w = falloff exponent (consumed by LightingV1) */
+	std::array<glm::vec4, kMaxShaderLights> pointOrigins = {};
+	/** rgb = color * intensity, a = 1 */
+	std::array<glm::vec4, kMaxShaderLights> directionalColors = {};
+	/** xyz = world-space direction to the light, w = 0 */
+	std::array<glm::vec4, kMaxShaderLights> directionalDirections = {};
+    };
+
+    [[nodiscard]] const ShaderLightState& getLightState () const { return this->m_shaderLightState; }
     [[nodiscard]] const glm::vec3* getLightPositions () const { return this->m_lightPositions.data (); }
     [[nodiscard]] const glm::vec4* getLightColorsRadius () const { return this->m_lightColorsRadius.data (); }
 
@@ -153,6 +174,10 @@ private:
     /** Shader light state, refreshed each frame from the scene's light objects */
     std::array<glm::vec3, kMaxShaderLights> m_lightPositions = {};
     std::array<glm::vec4, kMaxShaderLights> m_lightColorsRadius = {};
+    /** PBR light arrays (generic3/4 family); counts are fixed at scene setup */
+    ShaderLightState m_shaderLightState = {};
+    /** Every light layer in scene order; visibility and slot caps apply per frame */
+    std::vector<const LightObject*> m_lightObjects = {};
     /** Scene clear color, also used to clear the reflection target */
     glm::vec3 m_clearColor = glm::vec3 (0.0f);
     std::map<int, CObject*> m_objects = {};

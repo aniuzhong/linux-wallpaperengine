@@ -19,6 +19,8 @@
 #include <functional>
 #include <ranges>
 
+#include <glm/gtc/matrix_transform.hpp>
+
 extern float g_Time;
 extern float g_TimeLast;
 
@@ -27,6 +29,13 @@ using namespace WallpaperEngine::Render;
 using namespace WallpaperEngine::Data::Model;
 using namespace WallpaperEngine::Data::Parsers;
 using namespace WallpaperEngine::Render::Wallpapers;
+
+namespace {
+bool isPointLight (const LightObject& light) { return light.type == "lpoint" || light.type == "point"; }
+bool isDirectionalLight (const LightObject& light) {
+    return light.type == "ldirectional" || light.type == "directional";
+}
+} // namespace
 
 CScene::CScene (
     const Wallpaper& wallpaper, RenderContext& context, AudioContext& audioContext,
@@ -165,6 +174,31 @@ CScene::CScene (
 
     this->m_clearColor = clearColor;
 
+    // Collect the lights before creating the render objects: model/image pass
+    // shaders are compiled during creation and need to know how many
+    // LIGHTS_POINT/LIGHTS_DIRECTIONAL slots to declare. Every light is kept so
+    // the per-type assignment stays stable when visibility changes at runtime;
+    // invisible lights keep their slot but contribute a zero color.
+    for (const auto& object : scene->objects) {
+	if (!object->is<LightObject> ()) {
+	    continue;
+	}
+
+	const auto* light = object->as<LightObject> ();
+
+	this->m_lightObjects.push_back (light);
+
+	if (isPointLight (*light)) {
+	    if (this->m_shaderLightState.pointCount < kMaxShaderLights) {
+		this->m_shaderLightState.pointCount++;
+	    }
+	} else if (isDirectionalLight (*light)) {
+	    if (this->m_shaderLightState.directionalCount < kMaxShaderLights) {
+		this->m_shaderLightState.directionalCount++;
+	    }
+	}
+    }
+
     // create all objects based off their dependencies
     for (const auto& object : scene->objects) {
 	this->createObject (*object);
@@ -183,6 +217,7 @@ CScene::CScene (
 	this->m_animationRuntime.registerSetting (light.color);
 	this->m_animationRuntime.registerSetting (light.intensity);
 	this->m_animationRuntime.registerSetting (light.radius);
+	this->m_animationRuntime.registerSetting (light.exponent);
     }
 
     // copy over objects by render order
@@ -476,26 +511,61 @@ void CScene::updateLights () {
     this->m_lightPositions.fill (glm::vec3 (0.0f));
     this->m_lightColorsRadius.fill (glm::vec4 (0.0f));
 
-    int slot = 0;
+    this->m_shaderLightState.pointColors.fill (glm::vec4 (0.0f));
+    this->m_shaderLightState.pointOrigins.fill (glm::vec4 (0.0f));
+    this->m_shaderLightState.directionalColors.fill (glm::vec4 (0.0f));
+    this->m_shaderLightState.directionalDirections.fill (glm::vec4 (0.0f));
 
-    for (const auto& object : this->getScene ().objects) {
-	if (!object->is<LightObject> () || slot >= kMaxShaderLights) {
-	    continue;
+    int legacySlot = 0;
+    int pointSlot = 0;
+    int directionalSlot = 0;
+
+    for (const auto* lightPtr : this->m_lightObjects) {
+	const auto& light = *lightPtr;
+	const bool visible = light.groupVisible->value->getBool ();
+	const glm::vec3 color
+	    = visible ? light.color->value->getVec3 () * light.intensity->value->getFloat () : glm::vec3 (0.0f);
+	const glm::vec3 origin = light.origin->value->getVec3 ();
+	const float radius = light.radius->value->getFloat ();
+
+	if (isPointLight (light)) {
+	    if (pointSlot < this->m_shaderLightState.pointCount) {
+		// PBR path matches WE's uniform packing: color is premultiplied by
+		// intensity and its w component carries the falloff radius, while
+		// the exponent travels in origin.w.
+		this->m_shaderLightState.pointColors[pointSlot] = glm::vec4 (color, glm::max (radius, 1.0e-4f));
+		this->m_shaderLightState.pointOrigins[pointSlot]
+		    = glm::vec4 (origin, glm::max (light.exponent->value->getFloat (), 0.0f));
+		pointSlot++;
+	    }
+	} else if (isDirectionalLight (light)) {
+	    if (directionalSlot < this->m_shaderLightState.directionalCount) {
+		// Layer angles are stored in radians; SceneScript values are converted
+		// at the ScriptableObject boundary.
+		const glm::vec3 angles = light.groupAngles->value->getVec3 ();
+
+		// Directional lights point along their local -X axis; rotating it by
+		// the layer angles matches the convention used by WE scene scripts
+		// (see the sun-direction script in 3589454154).
+		glm::mat4 rotation = glm::rotate (glm::mat4 (1.0f), -angles.z, glm::vec3 (0.0f, 0.0f, 1.0f));
+		rotation = glm::rotate (rotation, angles.y, glm::vec3 (0.0f, 1.0f, 0.0f));
+		rotation = glm::rotate (rotation, -angles.x, glm::vec3 (1.0f, 0.0f, 0.0f));
+
+		const glm::vec3 direction = glm::normalize (glm::vec3 (rotation * glm::vec4 (-1.0f, 0.0f, 0.0f, 0.0f)));
+
+		this->m_shaderLightState.directionalColors[directionalSlot] = glm::vec4 (color, 1.0f);
+		this->m_shaderLightState.directionalDirections[directionalSlot] = glm::vec4 (direction, 0.0f);
+		directionalSlot++;
+	    }
 	}
 
-	const auto& light = *object->as<LightObject> ();
-
-	if (!light.groupVisible->value->getBool ()) {
-	    continue;
+	// Legacy generic/generic2 path: visible lights keep their authored order and
+	// are packed as color * intensity with the falloff radius in alpha.
+	if (visible && legacySlot < kMaxShaderLights) {
+	    this->m_lightPositions[legacySlot] = origin;
+	    this->m_lightColorsRadius[legacySlot] = glm::vec4 (color, radius);
+	    legacySlot++;
 	}
-
-	// WE packs the shader light as color * intensity with the falloff
-	// radius in the alpha slot (ComputeLightSpecular's linear attenuation)
-	const glm::vec3 color = light.color->value->getVec3 () * light.intensity->value->getFloat ();
-
-	this->m_lightPositions[slot] = light.origin->value->getVec3 ();
-	this->m_lightColorsRadius[slot] = glm::vec4 (color, light.radius->value->getFloat ());
-	slot++;
     }
 }
 

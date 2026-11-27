@@ -7,7 +7,7 @@
 
 using namespace WallpaperEngine::Data::Model;
 
-DynamicValue::DynamicValue (const DynamicValue& other) {
+DynamicValue::DynamicValue (const DynamicValue& other) : m_angular (other.m_angular) {
     this->DynamicValue::update (other, UpdateSource::Initialization);
 }
 
@@ -138,12 +138,16 @@ void DynamicValue::update (const glm::vec2& newValue, UpdateSource source) {
 }
 
 void DynamicValue::update (const glm::vec3& newValue, UpdateSource source) {
-    this->m_vec2 = glm::vec2 (newValue);
-    this->m_vec3 = newValue;
-    this->m_vec4 = glm::vec4 (newValue, 0.0f);
-    this->m_float = newValue.x;
-    this->m_int = static_cast<int> (newValue.x);
-    this->m_bool = newValue.x != 0.0f;
+    // SceneScript exposes layer angles in degrees while renderers consume the
+    // radians stored in scene.json, so script writes cross the boundary here.
+    const glm::vec3 value = this->m_angular && source == UpdateSource::Script ? glm::radians (newValue) : newValue;
+
+    this->m_vec2 = glm::vec2 (value);
+    this->m_vec3 = value;
+    this->m_vec4 = glm::vec4 (value, 0.0f);
+    this->m_float = value.x;
+    this->m_int = static_cast<int> (value.x);
+    this->m_bool = value.x != 0.0f;
     this->m_string = "";
     this->m_type = UnderlyingType::Vec3;
 
@@ -151,12 +155,14 @@ void DynamicValue::update (const glm::vec3& newValue, UpdateSource source) {
 }
 
 void DynamicValue::update (const glm::vec4& newValue, UpdateSource source) {
-    this->m_vec2 = glm::vec2 (newValue);
-    this->m_vec3 = glm::vec3 (newValue);
-    this->m_vec4 = newValue;
-    this->m_float = newValue.x;
-    this->m_int = static_cast<int> (newValue.x);
-    this->m_bool = newValue.x != 0.0f;
+    const glm::vec4 value = this->m_angular && source == UpdateSource::Script ? glm::radians (newValue) : newValue;
+
+    this->m_vec2 = glm::vec2 (value);
+    this->m_vec3 = glm::vec3 (value);
+    this->m_vec4 = value;
+    this->m_float = value.x;
+    this->m_int = static_cast<int> (value.x);
+    this->m_bool = value.x != 0.0f;
     this->m_string = "";
     this->m_type = UnderlyingType::Vec4;
 

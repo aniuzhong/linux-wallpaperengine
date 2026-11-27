@@ -642,6 +642,19 @@ void CPass::setupShaders () {
     // copy the combos from the pass
     this->m_combos.insert (this->m_pass.combos.begin (), this->m_pass.combos.end ());
 
+    // PBR shaders (generic3/4, genericimage3/4, foliage/fur/chroma) size their
+    // light arrays with these macros. The legacy generic/generic2 path does not
+    // use them and keeps working through g_LightsPosition/g_LightsColorRadius.
+    const auto& lightState = this->m_renderable.getScene ().getLightState ();
+
+    if (lightState.pointCount > 0) {
+	this->m_combos.insert_or_assign ("LIGHTS_POINT", lightState.pointCount);
+    }
+
+    if (lightState.directionalCount > 0) {
+	this->m_combos.insert_or_assign ("LIGHTS_DIRECTIONAL", lightState.directionalCount);
+    }
+
     // TODO: THE VALUES ARE THE SAME AS THE ENUMERATION, SO MAYBE IT HAS TO BE SPECIFIED FOR THE TEXTURE 0 OF ALL
     // ELEMENTS?
     if (texture0 != nullptr) {
@@ -906,6 +919,22 @@ void CPass::setupUniforms () {
     // them every frame, so the pointer values stay live)
     this->addUniform ("g_LightsPosition", scene.getLightPositions (), Wallpapers::CScene::kMaxShaderLights);
     this->addUniform ("g_LightsColorRadius", scene.getLightColorsRadius (), Wallpapers::CScene::kMaxShaderLights);
+
+    // PBR shader family light arrays. The scenes without lights leave the
+    // counts at zero, so these lookups simply do nothing for 2D wallpapers.
+    const auto& lightState = scene.getLightState ();
+
+    if (lightState.pointCount > 0) {
+	this->addUniform ("g_LPoint_Color", lightState.pointColors.data (), lightState.pointCount);
+	this->addUniform ("g_LPoint_Origin", lightState.pointOrigins.data (), lightState.pointCount);
+    }
+
+    if (lightState.directionalCount > 0) {
+	this->addUniform ("g_LDirectional_Color", lightState.directionalColors.data (), lightState.directionalCount);
+	this->addUniform (
+	    "g_LDirectional_Direction", lightState.directionalDirections.data (), lightState.directionalCount
+	);
+    }
     // register variables like brightness and alpha with some default value
     this->addUniform ("g_Brightness", renderable.getBrightness ());
     this->addUniform ("g_UserAlpha", renderable.getUserAlpha ());
