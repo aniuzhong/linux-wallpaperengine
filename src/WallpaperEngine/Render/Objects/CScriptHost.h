@@ -16,8 +16,8 @@ namespace WallpaperEngine::Render::Objects {
  *  - the values scripted here stay visible to the systems that read the
  *    authored settings (CScene::updateLights, resolveTransform, ...).
  *
- * Camera pose/fov are snapshotted by the parser before scripts run; this class
- * exposes the camera layer but does not drive the scene camera.
+ * Camera pose/fov are read by CScene::updateCameraFromObject after scripts run,
+ * so scripted camera layers drive the scene camera through this node.
  */
 class CScriptHost final : public Scripting::ScriptableObject {
 public:

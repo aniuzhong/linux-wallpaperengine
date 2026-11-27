@@ -24,10 +24,12 @@ public:
     void setOrthogonalProjection (const float width, const float height);
     void setPerspectiveProjection (float width, float height, bool flipY);
     /**
-     * Applies a static camera transform from SceneScript. Camera paths own the
-     * camera when present, so this is ignored while a path is active.
+     * Applies a static camera transform from SceneScript or a camera layer.
+     * Camera paths own the camera when present, so this is ignored while a
+     * path is active.
      *
-     * `zoom` is a 2D-only value in Wallpaper Engine; 3D scenes use setFov().
+     * `zoom` is a relative zoom applied to both projections; 3D scenes also
+     * use setFov() for the field of view itself.
      */
     void setStaticTransforms (const glm::vec3& eye, const glm::vec3& center, const glm::vec3& up, float zoom);
     /**

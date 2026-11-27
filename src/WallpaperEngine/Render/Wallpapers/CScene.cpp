@@ -35,6 +35,7 @@ bool isPointLight (const LightObject& light) { return light.type == "lpoint" || 
 bool isDirectionalLight (const LightObject& light) {
     return light.type == "ldirectional" || light.type == "directional";
 }
+
 } // namespace
 
 CScene::CScene (
@@ -173,6 +174,10 @@ CScene::CScene (
     const glm::vec3 clearColor = scene->colors.clear->value->getVec3 ();
 
     this->m_clearColor = clearColor;
+
+    // The parser already used the same selection for the initial camera pose;
+    // keep a pointer so scripted origin/angles/fov can drive it every frame.
+    this->m_cameraObject = findActiveCameraObject (scene->objects);
 
     // Collect the lights before creating the render objects: model/image pass
     // shaders are compiled during creation and need to know how many
@@ -391,9 +396,8 @@ Render::CObject* CScene::dispatchObjectType (const Object& object) {
     } else {
 	// Layers without a renderer of their own still need a scene-graph node:
 	// group/container objects take part in the parent transform chain, and
-	// cameras, lights and groups can all carry SceneScripts. Camera pose/fov
-	// are snapshotted by the parser before scripts run, so for cameras this
-	// only exposes the layer and its scripted properties.
+	// cameras, lights and groups can all carry SceneScripts. The active camera
+	// layer is read back in updateCameraFromObject after the script tick.
 	renderObject = new Objects::CScriptHost (*this, object);
     }
 
@@ -504,6 +508,40 @@ void CScene::sortModelsByDepth () {
 	}
 
 	object = (nextModel++)->model;
+    }
+}
+
+void CScene::updateCameraFromObject () {
+    if (this->m_cameraObject == nullptr || this->m_camera == nullptr) {
+	return;
+    }
+
+    // Camera paths own every channel (pose, fov and zoom); do not fight them.
+    if (this->m_camera->usesCameraPath () || this->m_camera->isOrthogonal ()) {
+	return;
+    }
+
+    if (!this->m_cameraObject->groupVisible->value->getBool ()) {
+	return;
+    }
+
+    const glm::vec3 origin = this->m_cameraObject->origin->value->getVec3 ();
+    const glm::vec3 angles = this->m_cameraObject->groupAngles->value->getVec3 ();
+
+    // same rotation order as the parser and object transforms: Rz * Ry * Rx
+    glm::mat4 rotation = glm::rotate (glm::mat4 (1.0f), angles.z, glm::vec3 (0.0f, 0.0f, 1.0f));
+    rotation = glm::rotate (rotation, angles.y, glm::vec3 (0.0f, 1.0f, 0.0f));
+    rotation = glm::rotate (rotation, angles.x, glm::vec3 (1.0f, 0.0f, 0.0f));
+
+    // the camera object looks down -Z with +Y up in its own space
+    const glm::vec3 eye = origin;
+    const glm::vec3 center = origin + glm::vec3 (rotation * glm::vec4 (0.0f, 0.0f, -1.0f, 0.0f));
+    const glm::vec3 up = glm::vec3 (rotation * glm::vec4 (0.0f, 1.0f, 0.0f, 0.0f));
+
+    this->m_camera->setStaticTransforms (eye, center, up, this->m_cameraObject->zoom->value->getFloat ());
+
+    if (this->m_cameraObject->hasFov) {
+	this->m_camera->setFov (this->m_cameraObject->fov->value->getFloat ());
     }
 }
 
@@ -638,6 +676,9 @@ void CScene::renderFrame (const glm::ivec4& viewport) {
 
     // run a tick in the javascript logic
     this->getScriptEngine ().tick ();
+
+    // apply scripted camera layer pose/fov before the camera path tick
+    this->updateCameraFromObject ();
 
     // advance the camera path animation before drawing anything
     this->m_camera->tick ();

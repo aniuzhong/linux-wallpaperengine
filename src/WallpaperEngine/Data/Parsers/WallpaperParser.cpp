@@ -30,31 +30,6 @@ std::vector<CameraPath> loadCameraPathFile (const Project& project, const std::s
     }
 }
 
-/**
- * Finds the camera object that drives a 3D scene. Wallpaper Engine selects the
- * last visible "default" camera object; if none is active the top-level camera
- * block remains in use.
- * Runtime user-property switching is handled later.
- */
-const CameraObject* findActiveCameraObject (const ObjectList& objects) {
-    const CameraObject* activeCamera = nullptr;
-
-    for (const auto& object : objects) {
-	if (!object->is<CameraObject> ()) {
-	    continue;
-	}
-
-	const auto* camera = object->as<CameraObject> ();
-
-	if (camera->camera != "default" || !camera->groupVisible->value->getBool ()) {
-	    continue;
-	}
-
-	activeCamera = camera;
-    }
-
-    return activeCamera;
-}
 } // namespace
 
 WallpaperUniquePtr WallpaperParser::parse (const JSON& file, Project& project) {

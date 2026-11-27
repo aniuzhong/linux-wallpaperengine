@@ -144,6 +144,8 @@ private:
     void sortModelsByDepth ();
     /** Refreshes the shader light arrays from the scene's light objects */
     void updateLights ();
+    /** Applies the active camera layer's scripted pose/fov to the scene camera */
+    void updateCameraFromObject ();
     /** Collects the reflected models and the mirror plane once the scene is set up */
     void setupReflection ();
     /**
@@ -178,6 +180,8 @@ private:
     ShaderLightState m_shaderLightState = {};
     /** Every light layer in scene order; visibility and slot caps apply per frame */
     std::vector<const LightObject*> m_lightObjects = {};
+    /** Active 3D camera layer, if the scene uses one */
+    const CameraObject* m_cameraObject = nullptr;
     /** Scene clear color, also used to clear the reflection target */
     glm::vec3 m_clearColor = glm::vec3 (0.0f);
     std::map<int, CObject*> m_objects = {};

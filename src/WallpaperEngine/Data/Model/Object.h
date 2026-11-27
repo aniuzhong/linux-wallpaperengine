@@ -179,6 +179,35 @@ public:
 };
 
 /**
+ * Selects the camera layer that drives a 3D scene. Wallpaper Engine uses the
+ * last visible "default" camera object; if none is active the top-level camera
+ * block remains in use.
+ *
+ * This is the load-time selection. Callers that re-evaluate visibility at
+ * runtime (user properties/SceneScript) should call it again after the values
+ * change instead of caching the result forever.
+ */
+[[nodiscard]] inline const CameraObject* findActiveCameraObject (const ObjectList& objects) {
+    const CameraObject* activeCamera = nullptr;
+
+    for (const auto& object : objects) {
+	if (!object->is<CameraObject> ()) {
+	    continue;
+	}
+
+	const auto* camera = object->as<CameraObject> ();
+
+	if (camera->camera != "default" || !camera->groupVisible->value->getBool ()) {
+	    continue;
+	}
+
+	activeCamera = camera;
+    }
+
+    return activeCamera;
+}
+
+/**
  * A 3D model object, rendered from a compiled .mdl file
  */
 struct ModelObjectData {

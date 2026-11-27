@@ -151,10 +151,10 @@ void Camera::setStaticTransforms (
 	this->m_currentUp = glm::normalize (up);
     }
 
-    // CameraTransforms.zoom is documented as a 2D-only value; 3D scenes use
-    // thisScene.fov instead. Paths above own every camera channel, so static
-    // transforms never reach this point while a path is active.
-    if (zoom > 0.0f && this->m_isOrthogonal) {
+    // CameraTransforms.zoom is relative: values above 1 zoom in. It applies to
+    // both projection modes (the helper scales the perspective axes too). A
+    // camera path owns every channel and never reaches this point.
+    if (zoom > 0.0f) {
 	this->m_currentZoom = zoom;
     }
 
@@ -162,6 +162,8 @@ void Camera::setStaticTransforms (
 
     if (this->m_isOrthogonal) {
 	this->updateOrthogonalProjection ();
+    } else {
+	this->updatePerspectiveProjection (this->getFov (), this->m_currentZoom);
     }
 }
 
@@ -172,6 +174,12 @@ void Camera::setFov (const float fov) {
     }
 
     const float clamped = glm::clamp (fov, 1.0f, 179.0f);
+
+    // updateCameraFromObject() calls this every frame; avoid rewriting the
+    // authored value and rebuilding the projection when nothing changed.
+    if (std::abs (this->getFov () - clamped) <= 1e-6f) {
+	return;
+    }
 
     this->m_camera.projection.fov->value->update (clamped, DynamicValue::UpdateSource::Script);
 
