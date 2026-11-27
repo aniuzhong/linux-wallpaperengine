@@ -336,21 +336,26 @@ namespace {
     }
 } // namespace
 
-void Pose::init (const ModelFile& model) {
+bool Pose::init (const ModelFile& model) {
     this->inverse_bind_world.clear ();
     this->bone_order.clear ();
 
     const Rig* rig = getRig (model);
 
     if (rig == nullptr) {
-	return;
+	return true;
     }
 
     const size_t count = rig->bones.size ();
 
-    if (count == 0 || !buildBoneOrder (*rig, this->bone_order)) {
+    if (count == 0) {
+	return true;
+    }
+
+    if (!buildBoneOrder (*rig, this->bone_order)) {
+	this->inverse_bind_world.clear ();
 	this->bone_order.clear ();
-	return;
+	return false;
     }
 
     this->inverse_bind_world.assign (count, glm::mat4 (1.0f));
@@ -365,6 +370,8 @@ void Pose::init (const ModelFile& model) {
 	    this->inverse_bind_world[bone] = glm::inverse (world[bone]);
 	}
     }
+
+    return true;
 }
 
 void Pose::advance (const Rig& rig, std::vector<AnimationLayer>& layers, float dt) const {

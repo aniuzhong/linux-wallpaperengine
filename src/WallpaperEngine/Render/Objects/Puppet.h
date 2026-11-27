@@ -44,7 +44,7 @@ glm::vec4 computeBounds (const ModelFile& model);
  */
 class Pose {
 public:
-    void init (const ModelFile& model);
+    bool init (const ModelFile& model);
     void advance (const Rig& rig, std::vector<AnimationLayer>& layers, float dt) const;
     void skin (const ModelFile& model, const std::vector<AnimationLayer>& layers, std::vector<float>& out) const;
 

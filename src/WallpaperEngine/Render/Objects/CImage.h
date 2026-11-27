@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CRenderable.h"
+#include "Puppet.h"
 #include "WallpaperEngine/Render/CObject.h"
 #include "WallpaperEngine/Render/Objects/Effects/CPass.h"
 #include "WallpaperEngine/Render/Wallpapers/CScene.h"
@@ -11,6 +12,7 @@
 #include "WallpaperEngine/Scripting/ScriptableObject.h"
 
 #include <glm/vec3.hpp>
+#include <optional>
 #include <vector>
 
 using namespace WallpaperEngine;
@@ -115,7 +117,8 @@ private:
     GLuint m_puppetIndices = GL_NONE;
     GLsizei m_puppetIndexCount = 0;
     bool m_hasPuppetMesh = false;
-    std::vector<GLfloat> m_puppetRawPositions = {};
+    std::optional<Puppet::ModelFile> m_puppetModel;
+    Puppet::Pose m_puppetPose;
 
     glm::mat4 m_modelViewProjectionScreen = {};
     glm::mat4 m_modelViewProjectionPass = {};

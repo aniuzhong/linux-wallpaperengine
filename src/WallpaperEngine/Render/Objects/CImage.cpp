@@ -6,8 +6,9 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstring>
+#include <cstdint>
 #include <iterator>
+#include <limits>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -20,8 +21,7 @@
 #include "WallpaperEngine/Data/Model/Object.h"
 #include "WallpaperEngine/Data/Model/UserSetting.h"
 #include "WallpaperEngine/Data/Parsers/MaterialParser.h"
-#include "WallpaperEngine/Data/Utils/BinaryReader.h"
-#include "WallpaperEngine/Data/Utils/MemoryStream.h"
+#include "WallpaperEngine/Data/Parsers/PuppetParser.h"
 #include "WallpaperEngine/Data/Utils/ScopeGuard.h"
 #include "WallpaperEngine/Logging/Log.h"
 #include "WallpaperEngine/Render/Utils/CompositionLayer.h"
@@ -68,41 +68,6 @@ std::optional<glm::vec3> findMagentaCompositeTint (const Image& image, const std
     return std::nullopt;
 }
 
-struct PuppetMeshBlock {
-    size_t headerOffset = 0;
-    uint32_t vertexBytes = 0;
-    uint32_t indexBytes = 0;
-};
-
-std::optional<PuppetMeshBlock> findPuppetMeshBlock (
-    const BinaryReader& reader, size_t markerSize, size_t mdlsOffset, size_t meshHeaderSize, size_t vertexStride
-) {
-    for (size_t offset = markerSize; offset + meshHeaderSize + sizeof (uint32_t) < mdlsOffset; offset++) {
-	reader.base ().seekg (static_cast<std::streamoff> (offset + sizeof (uint32_t)), std::ios::beg);
-	const uint32_t candidateVertexBytes = reader.nextUInt32 ();
-	const size_t verticesOffset = offset + meshHeaderSize;
-	const size_t indexLengthOffset = verticesOffset + candidateVertexBytes;
-
-	if (candidateVertexBytes == 0 || candidateVertexBytes % vertexStride != 0
-	    || indexLengthOffset + sizeof (uint32_t) > mdlsOffset) {
-	    continue;
-	}
-
-	reader.base ().seekg (static_cast<std::streamoff> (indexLengthOffset), std::ios::beg);
-	const uint32_t candidateIndexBytes = reader.nextUInt32 ();
-	const size_t indicesOffset = indexLengthOffset + sizeof (uint32_t);
-	if (candidateIndexBytes == 0 || candidateIndexBytes % (sizeof (uint16_t) * 3) != 0
-	    || indicesOffset + candidateIndexBytes > mdlsOffset) {
-	    continue;
-	}
-
-	return PuppetMeshBlock { .headerOffset = offset,
-				 .vertexBytes = candidateVertexBytes,
-				 .indexBytes = candidateIndexBytes };
-    }
-
-    return std::nullopt;
-}
 }
 
 CImage::CImage (Wallpapers::CScene& scene, const Image& image) :
@@ -584,77 +549,78 @@ bool CImage::loadPuppetMesh (const glm::vec2& size) {
 
     try {
 	const auto stream = this->getScene ().getScene ().project.assetLocator->read (*this->getImage ().model->puppet);
-	std::vector<char> data { std::istreambuf_iterator<char> (*stream), std::istreambuf_iterator<char> () };
+	const std::vector<uint8_t> data { std::istreambuf_iterator<char> (*stream), std::istreambuf_iterator<char> () };
 
-	constexpr size_t markerSize = 9;
-	constexpr size_t meshHeaderSize = sizeof (uint32_t) * 2;
-	constexpr size_t vertexStride = 80;
-	constexpr size_t positionOffset = 0;
-	constexpr size_t uvOffset = 72;
+	Puppet::ModelFile model;
 
-	const std::string puppetVersion
-	    = data.size () >= markerSize ? std::string (data.data (), strlen ("MDLV0021")) : "";
-	if (puppetVersion != "MDLV0021" && puppetVersion != "MDLV0023") {
-	    sLog.error ("Unsupported puppet model header ", puppetVersion, " in ", *this->getImage ().model->puppet);
+	if (!parsePuppetModel (data.data (), data.size (), model)) {
+	    sLog.error ("Could not parse puppet model ", *this->getImage ().model->puppet);
 	    return false;
 	}
 
-	const size_t mdlsOffset = [&data] () -> size_t {
-	    for (size_t offset = markerSize; offset + strlen ("MDLS") < data.size (); offset++) {
-		if (std::memcmp (data.data () + offset, "MDLS", strlen ("MDLS")) == 0) {
-		    return offset;
-		}
-	    }
-	    return data.size ();
-	}();
-
-	auto meshBuffer = std::make_unique<char[]> (data.size ());
-	std::copy (data.begin (), data.end (), meshBuffer.get ());
-	const BinaryReader reader (std::make_shared<MemoryStream> (std::move (meshBuffer), data.size ()));
-	const auto meshBlock = findPuppetMeshBlock (reader, markerSize, mdlsOffset, meshHeaderSize, vertexStride);
-	if (!meshBlock.has_value ()) {
-	    sLog.error ("Could not find a usable MDLV mesh block in ", *this->getImage ().model->puppet);
-	    return false;
-	}
-
-	const size_t vertexCount = meshBlock->vertexBytes / vertexStride;
-	const size_t verticesOffset = meshBlock->headerOffset + meshHeaderSize;
-	const size_t indicesOffset = verticesOffset + meshBlock->vertexBytes + sizeof (uint32_t);
-	const size_t indexCount = meshBlock->indexBytes / sizeof (uint16_t);
 	std::vector<GLfloat> texcoords;
-	std::vector<GLushort> indices;
+	std::vector<GLuint> indices;
+	size_t totalIndices = 0;
 
-	this->m_puppetRawPositions.clear ();
-	this->m_puppetRawPositions.reserve (vertexCount * 3);
-	texcoords.reserve (vertexCount * 2);
-	indices.reserve (indexCount);
-
-	for (size_t index = 0; index < vertexCount; index++) {
-	    const size_t vertexOffset = verticesOffset + index * vertexStride;
-	    reader.base ().seekg (static_cast<std::streamoff> (vertexOffset + positionOffset), std::ios::beg);
-	    const float x = reader.nextFloat ();
-	    const float y = reader.nextFloat ();
-	    const float z = reader.nextFloat ();
-	    reader.base ().seekg (static_cast<std::streamoff> (vertexOffset + uvOffset), std::ios::beg);
-	    const float u = reader.nextFloat ();
-	    const float v = reader.nextFloat ();
-
-	    this->m_puppetRawPositions.push_back (x);
-	    this->m_puppetRawPositions.push_back (y);
-	    this->m_puppetRawPositions.push_back (z);
-	    texcoords.push_back (u);
-	    texcoords.push_back (v);
+	for (const auto& section : model.sections) {
+	    totalIndices += section.indices.size ();
 	}
 
-	reader.base ().seekg (static_cast<std::streamoff> (indicesOffset), std::ios::beg);
-	for (size_t index = 0; index < indexCount; index++) {
-	    uint16_t value = 0;
-	    reader.next (reinterpret_cast<char*> (&value), sizeof (value));
-	    if (value >= vertexCount) {
-		sLog.error ("Invalid puppet mesh index ", value, " in ", *this->getImage ().model->puppet);
-		return false;
+	texcoords.reserve (model.vertexCount () * 2);
+	indices.reserve (totalIndices);
+
+	size_t vertexOffset = 0;
+
+	for (const auto& section : model.sections) {
+	    const auto& layout = section.layout;
+
+	    if (layout.stride == 0) {
+		continue;
 	    }
-	    indices.push_back (value);
+
+	    const size_t vertexCount = section.vertices.size () / layout.stride;
+
+	    for (size_t vertex = 0; vertex < vertexCount; ++vertex) {
+		const float* vertexData = section.vertices.data () + vertex * layout.stride;
+		texcoords.push_back (vertexData[layout.uvOffset]);
+		texcoords.push_back (vertexData[layout.uvOffset + 1]);
+	    }
+
+	    for (const uint32_t index : section.indices) {
+		if (index >= vertexCount) {
+		    sLog.error ("Invalid puppet mesh index ", index, " in ", *this->getImage ().model->puppet);
+		    return false;
+		}
+
+		if (vertexOffset > std::numeric_limits<GLuint>::max () - index) {
+		    sLog.error ("Puppet mesh has too many vertices in ", *this->getImage ().model->puppet);
+		    return false;
+		}
+
+		indices.push_back (static_cast<GLuint> (vertexOffset + index));
+	    }
+
+	    vertexOffset += vertexCount;
+	}
+
+	if (vertexOffset == 0 || indices.empty ()) {
+	    sLog.error ("Puppet model ", *this->getImage ().model->puppet, " has no drawable mesh");
+	    return false;
+	}
+
+	if (indices.size () > static_cast<size_t> (std::numeric_limits<GLsizei>::max ())) {
+	    sLog.error ("Puppet model ", *this->getImage ().model->puppet, " has too many indices");
+	    return false;
+	}
+
+	// The image material is used for every section. Per-section materials
+	// would need one draw call per section.
+	this->m_puppetModel = std::move (model);
+
+	if (!this->m_puppetPose.init (*this->m_puppetModel)) {
+	    sLog.error ("Puppet model ", *this->getImage ().model->puppet, " has an invalid bone hierarchy");
+	    this->m_puppetModel.reset ();
+	    return false;
 	}
 
 	this->updatePuppetPositionBuffer (size);
@@ -665,12 +631,12 @@ bool CImage::loadPuppetMesh (const glm::vec2& size) {
 
 	glGenBuffers (1, &this->m_puppetIndices);
 	glBindBuffer (GL_ELEMENT_ARRAY_BUFFER, this->m_puppetIndices);
-	glBufferData (GL_ELEMENT_ARRAY_BUFFER, indices.size () * sizeof (GLushort), indices.data (), GL_STATIC_DRAW);
+	glBufferData (GL_ELEMENT_ARRAY_BUFFER, indices.size () * sizeof (GLuint), indices.data (), GL_STATIC_DRAW);
 
 	this->m_puppetIndexCount = static_cast<GLsizei> (indices.size ());
 	sLog.out (
-	    "Loaded puppet mesh ", *this->getImage ().model->puppet, " version=", puppetVersion,
-	    " vertices=", vertexCount, " indices=", this->m_puppetIndexCount
+	    "Loaded puppet mesh ", *this->getImage ().model->puppet, " version=", this->m_puppetModel->version,
+	    " vertices=", vertexOffset, " indices=", this->m_puppetIndexCount
 	);
 
 	return true;
@@ -681,16 +647,23 @@ bool CImage::loadPuppetMesh (const glm::vec2& size) {
 }
 
 void CImage::updatePuppetPositionBuffer (const glm::vec2& size) {
-    if (this->m_puppetRawPositions.empty ()) {
+    if (!this->m_puppetModel.has_value ()) {
 	return;
     }
 
+    // Stage 2 only assembles the static pose. With no animation layer the
+    // puppet pose uses the first clip's first frame, which is the authored
+    // character layout rather than the raw texture-atlas layout.
+    std::vector<GLfloat> skinned;
+    this->m_puppetPose.skin (*this->m_puppetModel, {}, skinned);
+
     std::vector<GLfloat> positions;
-    positions.reserve (this->m_puppetRawPositions.size ());
-    for (size_t index = 0; index + 2 < this->m_puppetRawPositions.size (); index += 3) {
-	positions.push_back (size.x / 2.0f + this->m_puppetRawPositions[index]);
-	positions.push_back (size.y / 2.0f - this->m_puppetRawPositions[index + 1]);
-	positions.push_back (this->m_puppetRawPositions[index + 2]);
+    positions.reserve (skinned.size ());
+
+    for (size_t index = 0; index + 2 < skinned.size (); index += 3) {
+	positions.push_back (size.x / 2.0f + skinned[index]);
+	positions.push_back (size.y / 2.0f - skinned[index + 1]);
+	positions.push_back (skinned[index + 2]);
     }
 
     if (this->m_puppetSpacePosition == GL_NONE) {
@@ -731,7 +704,7 @@ void CImage::setupPuppetGeometryCallback (Effects::CPass* pass) const {
 		);
 	    }
 	    glBindBuffer (GL_ELEMENT_ARRAY_BUFFER, this->m_puppetIndices);
-	    glDrawElements (GL_TRIANGLES, this->m_puppetIndexCount, GL_UNSIGNED_SHORT, nullptr);
+	    glDrawElements (GL_TRIANGLES, this->m_puppetIndexCount, GL_UNSIGNED_INT, nullptr);
 	},
 	[pass] () {
 	    const GLint position = glGetAttribLocation (pass->getProgramID (), "a_Position");
