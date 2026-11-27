@@ -223,6 +223,23 @@ CImage::CImage (Wallpapers::CScene& scene, const Image& image) :
     // layer transform and effects apply to the composite, not to each child.
     this->resolveCompositionMode ();
 
+    // Fullscreen layers are scene-space post-processing passes: their effect
+    // chain must run at the scene render resolution. Sizing their FBOs from the
+    // projection (e.g. a 343x193 pixel-art scene) would make the final combine
+    // pass upscale a tiny buffer over the whole scene and blur it.
+    this->m_fboSize = size;
+
+    // Layers that render nothing keep the projection-sized FBOs to avoid
+    // allocating full-resolution buffers for nothing.
+    if (this->getImage ().model->fullscreen && !this->rendersNothing ()) {
+	if (const auto sceneFBO = scene.getFBO (); sceneFBO != nullptr) {
+	    this->m_fboSize = {
+		static_cast<float> (sceneFBO->getRealWidth ()),
+		static_cast<float> (sceneFBO->getRealHeight ()),
+	    };
+	}
+    }
+
     glm::vec2 scaledSize = size * glm::vec2 (scale);
 
     // calculate the center and shift from there
@@ -261,10 +278,10 @@ CImage::CImage (Wallpapers::CScene& scene, const Image& image) :
     nameB << "_rt_imageLayerComposite_" << this->getImage ().id << "_b";
 
     this->m_currentMainFBO = this->m_mainFBO = scene.create (
-	nameA.str (), TextureFormat_ARGB8888, this->m_texture->getFlags (), 1, { size.x, size.y }, { size.x, size.y }
+	nameA.str (), TextureFormat_ARGB8888, this->m_texture->getFlags (), 1, this->m_fboSize, this->m_fboSize
     );
     this->m_currentSubFBO = this->m_subFBO = scene.create (
-	nameB.str (), TextureFormat_ARGB8888, this->m_texture->getFlags (), 1, { size.x, size.y }, { size.x, size.y }
+	nameB.str (), TextureFormat_ARGB8888, this->m_texture->getFlags (), 1, this->m_fboSize, this->m_fboSize
     );
 
     if (this->m_compositionMode == CompositionMode::Capture && (size.x <= 0.0f || size.y <= 0.0f)) {
@@ -505,6 +522,11 @@ void CImage::resolveCompositionMode () {
     }
 }
 
+bool CImage::rendersNothing () const {
+    return this->m_compositionMode == CompositionMode::SkipLayer
+	|| (this->m_image.model->passthrough && !WallpaperEngine::Render::Utils::hasVisibleEffects (this->m_image));
+}
+
 void CImage::captureChildren () {
     if (this->m_captureFBO == nullptr) {
 	return;
@@ -743,8 +765,7 @@ void CImage::setup () {
     // Layers that render nothing still need a transform so cursor hit-testing
     // and layer scripts work: skip-mode composition layers and passthrough
     // images without any visible effect.
-    if (this->m_compositionMode == CompositionMode::SkipLayer
-	|| (this->m_image.model->passthrough && !WallpaperEngine::Render::Utils::hasVisibleEffects (this->m_image))) {
+    if (this->rendersNothing ()) {
 	this->updateScreenSpacePosition ();
 	this->m_initialized = true;
 	return;
@@ -789,7 +810,7 @@ void CImage::setup () {
 
 	    // create all the fbos for this effect
 	    for (const auto& fbo : cur->effect->fbos) {
-		fboProvider->create (*fbo, this->m_texture->getFlags (), this->getSize ());
+		fboProvider->create (*fbo, this->m_texture->getFlags (), this->m_fboSize);
 	    }
 
 	    // TODO: MAKE USE OF ZIP OPERATOR IN BOOST? WAY OVERKILL JUST FOR THIS...

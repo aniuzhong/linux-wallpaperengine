@@ -97,6 +97,8 @@ private:
     );
     void uploadGeometryBuffers (const glm::vec2& size);
     [[nodiscard]] bool shouldRenderFinalPass (bool isLastPass) const;
+    /** Whether this layer is statically known to draw nothing. */
+    [[nodiscard]] bool rendersNothing () const;
     bool configurePassTarget (
 	Effects::CPass* pass, std::shared_ptr<const CFBO>& drawTo,
 	const std::shared_ptr<const TextureProvider>& asInput, std::shared_ptr<const TextureProvider>& effectInput,
@@ -150,6 +152,12 @@ private:
     glm::vec4 m_pos = {};
     glm::vec3 m_sceneCenter = {};
     glm::vec2 m_size = {};
+    /**
+     * Pixel size of this layer's render targets. Matches m_size for normal
+     * layers, but fullscreen layers (post-processing) use the scene render
+     * resolution so their effect chain does not downscale the whole scene.
+     */
+    glm::vec2 m_fboSize = {};
 
     bool m_initialized = false;
     /** Zero-sized solid layers are transform/event parents, not visible quads. */
