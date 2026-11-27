@@ -285,6 +285,9 @@ void CModel::updateModelMatrix () {
 	    this->m_modelMatrix,
 	    glm::vec3 (this->m_localWidth * 0.5f + origin.x, this->m_localHeight * 0.5f - origin.y, 0.0f)
 	);
+	// Local capture renders into a Y-down screen-space composition target, so
+	// it keeps the 2D sign flip. The world path below uses the authored
+	// Rz * Ry * Rx convention (see CObject::localToParentMatrix).
 	this->m_modelMatrix = glm::rotate (this->m_modelMatrix, -angles.z, glm::vec3 (0, 0, 1));
 	this->m_modelMatrix = glm::rotate (this->m_modelMatrix, angles.y, glm::vec3 (0, 1, 0));
 	this->m_modelMatrix = glm::rotate (this->m_modelMatrix, -angles.x, glm::vec3 (1, 0, 0));

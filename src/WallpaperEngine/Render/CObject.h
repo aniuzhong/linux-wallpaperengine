@@ -99,8 +99,8 @@ protected:
      */
     [[nodiscard]] static LocalTransform localTransform (const Object& object);
 
-    /** Builds a local-to-parent matrix from a resolved local transform. */
-    [[nodiscard]] static glm::mat4 localMatrix (const LocalTransform& transform);
+    /** Builds the object's local-to-parent matrix (translation, Rz * Ry * Rx, scale). */
+    [[nodiscard]] static glm::mat4 localToParentMatrix (const LocalTransform& transform);
 
 private:
     static constexpr int kMaxParentDepth = 32;

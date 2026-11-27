@@ -128,10 +128,9 @@ CObject::ParentChain CObject::collectParentChain (const Object& object) const {
 }
 
 CObject::ResolvedTransform CObject::resolveTransform (const Object& object) const {
-    // The 2D compositor only consumes the Z angle. Text layers historically
-    // stay upright in that path even though their group angles are used by the
-    // 3D world matrix, so keep that behaviour explicit here.
-    const auto localAngle = [] (const Object& source, const LocalTransform& transform) {
+    // The 2D compositor and CText consume only the Z angle. Text layers stay
+    // upright in that path, so keep that behaviour explicit here.
+    const auto localZAngle = [] (const Object& source, const LocalTransform& transform) {
 	return source.is<Text> () ? 0.0f : transform.angles.z;
     };
 
@@ -141,12 +140,12 @@ CObject::ResolvedTransform CObject::resolveTransform (const Object& object) cons
     // transform, then fold each child onto its already-resolved parent.
     const Object* rootObject = chain.objects[chain.count - 1];
     const LocalTransform root = localTransform (*rootObject);
-    ResolvedTransform resolved = { root.origin, root.scale, localAngle (*rootObject, root) };
+    ResolvedTransform resolved = { root.origin, root.scale, localZAngle (*rootObject, root) };
 
     for (int i = static_cast<int> (chain.count) - 2; i >= 0; --i) {
 	const Object* currentObject = chain.objects[i];
 	const LocalTransform local = localTransform (*currentObject);
-	const float angle = localAngle (*currentObject, local);
+	const float angle = localZAngle (*currentObject, local);
 	const glm::vec2 offset = glm::rotate (
 	    glm::vec2 { local.origin.x * resolved.scale.x, local.origin.y * resolved.scale.y }, resolved.angle
 	);
@@ -163,7 +162,7 @@ CObject::ResolvedTransform CObject::resolveTransform (const Object& object) cons
     return resolved;
 }
 
-glm::mat4 CObject::localMatrix (const LocalTransform& transform) {
+glm::mat4 CObject::localToParentMatrix (const LocalTransform& transform) {
     glm::mat4 matrix = glm::translate (glm::mat4 (1.0f), transform.origin);
 
     // Scene angles are authored as Rz * Ry * Rx in the same convention as the
@@ -183,7 +182,7 @@ glm::mat4 CObject::resolveWorldMatrix (const Object& object) const {
     glm::mat4 world = glm::mat4 (1.0f);
 
     for (int i = static_cast<int> (chain.count) - 1; i >= 0; --i) {
-	world = world * localMatrix (localTransform (*chain.objects[i]));
+	world = world * localToParentMatrix (localTransform (*chain.objects[i]));
     }
 
     return world;
