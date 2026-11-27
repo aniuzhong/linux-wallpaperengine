@@ -1973,11 +1973,43 @@ void CParticle::updateMatrices () {
     m_mvpMatrix = m_viewProjectionMatrix * m_modelMatrix;
     m_mvpMatrixInverse = glm::inverse (m_mvpMatrix);
 
-    m_orientationUp = glm::vec3 (0.0f, 1.0f, 0.0f);
-    m_orientationRight = glm::vec3 (1.0f, 0.0f, 0.0f);
-    m_orientationForward = glm::vec3 (0.0f, 0.0f, 1.0f);
-    m_viewUp = glm::vec3 (0.0f, 1.0f, 0.0f);
-    m_viewRight = glm::vec3 (1.0f, 0.0f, 0.0f);
+    if (this->m_isPerspectiveScene) {
+	// Sprites are billboards in world space. The shader builds the quad in
+	// particle-local space, so feed it the camera basis converted into local
+	// space; after g_ModelMatrix they become the camera right/up axes again.
+	const glm::mat4& lookAt = getScene ().getCamera ().getLookAt ();
+	const glm::vec3 cameraRight { lookAt[0][0], lookAt[1][0], lookAt[2][0] };
+	const glm::vec3 cameraUp { lookAt[0][1], lookAt[1][1], lookAt[2][1] };
+	// 2D uses +Z as "forward" (right x up), which points back towards the
+	// viewer. Keep the same handedness in 3D so ComputeParticleTangents stays
+	// consistent.
+	const glm::vec3 cameraBackward = glm::cross (cameraRight, cameraUp);
+
+	const glm::mat3 worldToLocal = glm::mat3 (m_modelMatrixInverse);
+	const auto toLocalDirection = [&worldToLocal] (const glm::vec3& direction) {
+	    const glm::vec3 local = worldToLocal * direction;
+	    const float length = glm::length (local);
+
+	    return length > 1e-6f ? local / length : direction;
+	};
+
+	m_orientationRight = toLocalDirection (cameraRight);
+	m_orientationUp = toLocalDirection (cameraUp);
+	// common_particles' sprite basis expects local vectors, but
+	// genericropeparticle applies g_ModelMatrixInverse to
+	// g_OrientationForward itself, so ropes need the world direction.
+	m_orientationForward = this->m_useRopeRenderer ? cameraBackward : toLocalDirection (cameraBackward);
+	// VIEW uniforms are dotted against the local quad tangents by the REFRACT
+	// path, so they live in the same local space as the orientation basis.
+	m_viewRight = m_orientationRight;
+	m_viewUp = m_orientationUp;
+    } else {
+	m_orientationUp = glm::vec3 (0.0f, 1.0f, 0.0f);
+	m_orientationRight = glm::vec3 (1.0f, 0.0f, 0.0f);
+	m_orientationForward = glm::vec3 (0.0f, 0.0f, 1.0f);
+	m_viewUp = glm::vec3 (0.0f, 1.0f, 0.0f);
+	m_viewRight = glm::vec3 (1.0f, 0.0f, 0.0f);
+    }
 
     this->updateParticleRenderVars ();
 }
@@ -2230,8 +2262,21 @@ void CParticle::renderSprites () {
     // GL_DEPTH_CLAMP prevents near/far clipping by clamping depth instead.
     glEnable (GL_DEPTH_CLAMP);
 
+    // The perspective projection is Y-flipped for the scene FBO, which reverses
+    // the winding of the generated sprite quads. Culling is disabled for most
+    // particle materials, but a few (e.g. Ricepod's spritetrail) use
+    // cullmode=normal.
+    const bool yFlipped = getScene ().getCamera ().isYFlipped ();
+    if (yFlipped) {
+	glFrontFace (GL_CW);
+    }
+
     // CPass::render() handles: FBO binding, texture setup, uniforms, blending, draw call, cleanup
     m_pass->render ();
+
+    if (yFlipped) {
+	glFrontFace (GL_CCW);
+    }
 
     glDisable (GL_DEPTH_CLAMP);
 
@@ -2459,7 +2504,11 @@ void CParticle::renderRope () {
     }
 
     glEnable (GL_DEPTH_CLAMP);
+
+    // Rope strips already use the opposite winding from sprite quads; the
+    // Y-flip turns them front-facing, so no glFrontFace override is needed.
     m_pass->render ();
+
     glDisable (GL_DEPTH_CLAMP);
 
 #if !NDEBUG
