@@ -555,30 +555,44 @@ void CText::render () {
     const auto transform = this->resolveTransform (this->getObject ());
     const glm::vec3& scale = transform.scale;
     const glm::vec3& origin = transform.origin;
+    const auto& camera = getScene ().getCamera ();
+    const bool isOrthogonal = camera.isOrthogonal ();
 
-    // Scene space is Y-down with top-left origin and uses the design/projection
-    // resolution, not the camera's cropped window (same reference as
-    // resolveTransform/CImage). GL is Y-up and centered, so shift X by
-    // -scene_w/2 and mirror Y about y = scene_h/2.
-    const auto scene_w = static_cast<float> (getScene ().getWidth ());
-    const auto scene_h = static_cast<float> (getScene ().getHeight ());
-    const glm::vec3 gl_origin = {
-	origin.x - scene_w * 0.5f,
-	scene_h * 0.5f - origin.y,
-	origin.z,
-    };
+    // 2D scenes position layers in design/projection pixels with a Y-down
+    // top-left origin; GL is Y-up and centered, so shift X by -sceneWidth/2
+    // and mirror Y about y = sceneHeight/2. 3D scenes author layer origins in
+    // world units, so the origin is used as-is through the perspective camera.
+    glm::vec3 modelOrigin = origin;
+
+    if (isOrthogonal) {
+	const auto sceneWidth = static_cast<float> (getScene ().getWidth ());
+	const auto sceneHeight = static_cast<float> (getScene ().getHeight ());
+
+	modelOrigin = {
+	    origin.x - sceneWidth * 0.5f,
+	    sceneHeight * 0.5f - origin.y,
+	    origin.z,
+	};
+    }
 
     // The anchor point stays on the origin; the box is offset from it and
     // rotates with the object. Rotate by the parent-chain accumulated angle,
     // negated like CImage/CParticle to compensate the Y-flipped coordinate system.
-    glm::mat4 model = glm::translate (glm::mat4 (1.0f), gl_origin);
+    glm::mat4 model = glm::translate (glm::mat4 (1.0f), modelOrigin);
     if (transform.angle != 0.0f) {
 	model = glm::rotate (model, -transform.angle, glm::vec3 (0.0f, 0.0f, 1.0f));
     }
     model = glm::translate (model, this->anchorOffset (scale, true));
     model = glm::scale (model, scale);
 
-    const glm::mat4 mvp = getScene ().getCamera ().getProjection () * getScene ().getCamera ().getLookAt () * model;
+    if (camera.isYFlipped ()) {
+	// The projection is Y-flipped for the scene FBO while the glyph quad is
+	// authored for the 2D (non-flipped) path, so mirror the quad vertically in
+	// its own plane. The quad is centered, so this does not move the layer.
+	model = glm::scale (model, glm::vec3 (1.0f, -1.0f, 1.0f));
+    }
+
+    const glm::mat4 mvp = camera.getProjection () * camera.getLookAt () * model;
 
     this->draw (mvp, this->resolveDrawColor ());
 
