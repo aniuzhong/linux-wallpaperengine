@@ -184,9 +184,9 @@ public:
  * last visible "default" camera object; if none is active the top-level camera
  * block remains in use.
  *
- * This is the load-time selection. Callers that re-evaluate visibility at
- * runtime (user properties/SceneScript) should call it again after the values
- * change instead of caching the result forever.
+ * Visibility can be driven by user properties or SceneScript, so callers that
+ * apply a camera layer every frame should re-run this selection after the
+ * script tick instead of caching the result at load time.
  */
 [[nodiscard]] inline const CameraObject* findActiveCameraObject (const ObjectList& objects) {
     const CameraObject* activeCamera = nullptr;

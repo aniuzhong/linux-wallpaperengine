@@ -44,6 +44,14 @@ public:
     void tick ();
 
     [[nodiscard]] bool usesCameraPath () const;
+    /** Whether the loaded path belongs to the given CameraObject id. */
+    [[nodiscard]] bool usesCameraPathFor (int objectId) const;
+    /** Whether the loaded path comes from a CameraObject (not the top-level camera). */
+    [[nodiscard]] bool hasCameraObjectPath () const;
+    /** Temporarily hands camera control back to static/script transforms. */
+    void suspendCameraPath ();
+    /** Resumes the loaded path from its start. */
+    void resumeCameraPath ();
 
     [[nodiscard]] const glm::vec3& getCenter () const;
     [[nodiscard]] const glm::vec3& getEye () const;
@@ -77,6 +85,7 @@ private:
     /** camera path playback state, paths concatenate and loop */
     std::chrono::steady_clock::time_point m_pathStart;
     float m_totalPathDuration = 0.0f;
+    bool m_pathSuspended = false;
 
     /** current eye/center/up/zoom, updated by paths or static script transforms */
     glm::vec3 m_currentEye;

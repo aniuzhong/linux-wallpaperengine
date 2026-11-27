@@ -2,6 +2,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <algorithm>
 #include <cmath>
 
 #include "Camera.h"
@@ -27,7 +28,7 @@ Camera::Camera (Wallpapers::CScene& scene, const SceneData::Camera& camera) :
 }
 
 void Camera::tick () {
-    if (this->m_camera.paths.empty () || this->m_totalPathDuration <= 0.0f) {
+    if (this->m_pathSuspended || this->m_camera.paths.empty () || this->m_totalPathDuration <= 0.0f) {
 	return;
     }
 
@@ -127,7 +128,32 @@ float Camera::getFarZ () const { return this->m_camera.projection.farz->value->g
 
 float Camera::getZoom () const { return this->m_currentZoom; }
 
-bool Camera::usesCameraPath () const { return !this->m_camera.paths.empty () && this->m_totalPathDuration > 0.0f; }
+bool Camera::usesCameraPath () const {
+    return !this->m_pathSuspended && !this->m_camera.paths.empty () && this->m_totalPathDuration > 0.0f;
+}
+
+bool Camera::usesCameraPathFor (const int objectId) const {
+    return std::ranges::any_of (this->m_camera.paths, [objectId] (const CameraPathSource& source) {
+	return source.objectId == objectId && !source.paths.empty ();
+    });
+}
+
+bool Camera::hasCameraObjectPath () const {
+    return std::ranges::any_of (this->m_camera.paths, [] (const CameraPathSource& source) {
+	return source.objectId.has_value () && !source.paths.empty ();
+    });
+}
+
+void Camera::suspendCameraPath () { this->m_pathSuspended = true; }
+
+void Camera::resumeCameraPath () {
+    if (!this->m_pathSuspended) {
+	return;
+    }
+
+    this->m_pathSuspended = false;
+    this->m_pathStart = std::chrono::steady_clock::now ();
+}
 
 void Camera::setStaticTransforms (
     const glm::vec3& eye, const glm::vec3& center, const glm::vec3& up, const float zoom

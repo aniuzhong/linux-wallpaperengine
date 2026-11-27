@@ -158,6 +158,49 @@ TEST_CASE ("2886819832 (Sonic CD - Special Stage) object parser builds a CameraO
     CHECK (angles.y == Catch::Approx (3.14159f));
 }
 
+TEST_CASE ("active camera layer follows runtime visibility changes") {
+    auto project = makeProject ();
+
+    ObjectList objects = {};
+    objects.push_back (
+	ObjectParser::parse (
+	    JSON::parse (R"({
+        "id": 1,
+        "camera": "default",
+        "origin": "0 0 0",
+        "angles": "0 0 0",
+        "visible": true
+    })"),
+	    project
+	)
+    );
+    objects.push_back (
+	ObjectParser::parse (
+	    JSON::parse (R"({
+        "id": 2,
+        "camera": "default",
+        "origin": "0 0 1",
+        "angles": "0 0 0",
+        "visible": false
+    })"),
+	    project
+	)
+    );
+
+    REQUIRE (findActiveCameraObject (objects) == objects[0].get ());
+
+    // A user property or SceneScript can enable another camera after load.
+    objects[1]->as<CameraObject> ()->groupVisible->value->update (true, DynamicValue::UpdateSource::Script);
+    CHECK (findActiveCameraObject (objects) == objects[1].get ());
+
+    // The last visible default camera wins; hiding the old one changes nothing.
+    objects[0]->as<CameraObject> ()->groupVisible->value->update (false, DynamicValue::UpdateSource::Script);
+    CHECK (findActiveCameraObject (objects) == objects[1].get ());
+
+    objects[1]->as<CameraObject> ()->groupVisible->value->update (false, DynamicValue::UpdateSource::Script);
+    CHECK (findActiveCameraObject (objects) == nullptr);
+}
+
 TEST_CASE ("Audiophile legacy project loads as a scene with unique object ids") {
     // Official default project. project.json omits "type" and every object in
     // audiophile.json omits "id"/"name"; the model files are intentionally not

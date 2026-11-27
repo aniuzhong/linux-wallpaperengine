@@ -180,8 +180,6 @@ private:
     ShaderLightState m_shaderLightState = {};
     /** Every light layer in scene order; visibility and slot caps apply per frame */
     std::vector<const LightObject*> m_lightObjects = {};
-    /** Active 3D camera layer, if the scene uses one */
-    const CameraObject* m_cameraObject = nullptr;
     /** Scene clear color, also used to clear the reflection target */
     glm::vec3 m_clearColor = glm::vec3 (0.0f);
     std::map<int, CObject*> m_objects = {};

@@ -175,10 +175,6 @@ CScene::CScene (
 
     this->m_clearColor = clearColor;
 
-    // The parser already used the same selection for the initial camera pose;
-    // keep a pointer so scripted origin/angles/fov can drive it every frame.
-    this->m_cameraObject = findActiveCameraObject (scene->objects);
-
     // Collect the lights before creating the render objects: model/image pass
     // shaders are compiled during creation and need to know how many
     // LIGHTS_POINT/LIGHTS_DIRECTIONAL slots to declare. Every light is kept so
@@ -512,27 +508,46 @@ void CScene::sortModelsByDepth () {
 }
 
 void CScene::updateCameraFromObject () {
-    if (this->m_cameraObject == nullptr || this->m_camera == nullptr) {
+    if (this->m_camera == nullptr || this->m_camera->isOrthogonal ()) {
 	return;
     }
 
-    // Camera paths own every channel (pose, fov and zoom); do not fight them.
-    if (this->m_camera->usesCameraPath () || this->m_camera->isOrthogonal ()) {
+    // Visibility is a user-property/SceneScript value and scenes can switch
+    // between several camera layers at runtime (e.g. 2886819832's camera type).
+    // Re-evaluate instead of keeping the construction-time selection.
+    const CameraObject* cameraObject = findActiveCameraObject (this->getScene ().objects);
+
+    if (cameraObject == nullptr) {
+	// No layer owns the camera: stop a removed camera layer's path so
+	// SceneScript camera transforms (e.g. free-cam layers) are not overwritten,
+	// but let the legacy top-level camera path keep playing.
+	if (this->m_camera->hasCameraObjectPath ()) {
+	    this->m_camera->suspendCameraPath ();
+	} else {
+	    this->m_camera->resumeCameraPath ();
+	}
 	return;
     }
 
-    if (!this->m_cameraObject->groupVisible->value->getBool ()) {
+    // The parser loads the path of the initially active camera only. Keep it
+    // running while that same layer is active; another layer falls back to its
+    // static pose until per-layer path loading is implemented.
+    if (this->m_camera->usesCameraPathFor (cameraObject->id) && this->m_camera->usesCameraPath ()) {
 	return;
     }
 
-    const CameraPose pose = resolveCameraPose (*this->m_cameraObject);
+    this->m_camera->suspendCameraPath ();
 
-    this->m_camera->setStaticTransforms (
-	pose.eye, pose.center, pose.up, this->m_cameraObject->zoom->value->getFloat ()
-    );
+    const CameraPose pose = resolveCameraPose (*cameraObject);
 
-    if (this->m_cameraObject->hasFov) {
-	this->m_camera->setFov (this->m_cameraObject->fov->value->getFloat ());
+    this->m_camera->setStaticTransforms (pose.eye, pose.center, pose.up, cameraObject->zoom->value->getFloat ());
+
+    if (cameraObject->hasFov) {
+	this->m_camera->setFov (cameraObject->fov->value->getFloat ());
+    }
+
+    if (this->m_camera->usesCameraPathFor (cameraObject->id)) {
+	this->m_camera->resumeCameraPath ();
     }
 }
 
