@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "DynamicValue.h"
 #include "Effect.h"
@@ -205,6 +206,31 @@ public:
     }
 
     return activeCamera;
+}
+
+/**
+ * Camera pose authored by a CameraObject. The object looks down its local -Z
+ * axis with +Y up; angles use the same Rz * Ry * Rx order as scene transforms.
+ */
+struct CameraPose {
+    glm::vec3 eye;
+    glm::vec3 center;
+    glm::vec3 up;
+};
+
+[[nodiscard]] inline CameraPose resolveCameraPose (const CameraObject& camera) {
+    const glm::vec3 origin = camera.origin->value->getVec3 ();
+    const glm::vec3 angles = camera.groupAngles->value->getVec3 ();
+
+    glm::mat4 rotation = glm::rotate (glm::mat4 (1.0f), angles.z, glm::vec3 (0.0f, 0.0f, 1.0f));
+    rotation = glm::rotate (rotation, angles.y, glm::vec3 (0.0f, 1.0f, 0.0f));
+    rotation = glm::rotate (rotation, angles.x, glm::vec3 (1.0f, 0.0f, 0.0f));
+
+    return {
+	.eye = origin,
+	.center = origin + glm::vec3 (rotation * glm::vec4 (0.0f, 0.0f, -1.0f, 0.0f)),
+	.up = glm::vec3 (rotation * glm::vec4 (0.0f, 1.0f, 0.0f, 0.0f)),
+    };
 }
 
 /**

@@ -11,8 +11,6 @@
 #include <limits>
 #include <optional>
 
-#include <glm/gtc/matrix_transform.hpp>
-
 using namespace WallpaperEngine::Data::Parsers;
 
 namespace {
@@ -77,18 +75,11 @@ SceneUniquePtr WallpaperParser::parseScene (const JSON& file, Project& project) 
     // Engine ignores the top-level camera block (editor viewport) in that case.
     if (isPerspective) {
 	if (const CameraObject* cameraObject = findActiveCameraObject (parsedObjects); cameraObject != nullptr) {
-	    const auto origin = cameraObject->origin->value->getVec3 ();
-	    const auto angles = cameraObject->groupAngles->value->getVec3 ();
+	    const CameraPose pose = resolveCameraPose (*cameraObject);
 
-	    // same rotation order as object transforms: Rz * Ry * Rx
-	    glm::mat4 rotation = glm::rotate (glm::mat4 (1.0f), angles.z, glm::vec3 (0.0f, 0.0f, 1.0f));
-	    rotation = glm::rotate (rotation, angles.y, glm::vec3 (0.0f, 1.0f, 0.0f));
-	    rotation = glm::rotate (rotation, angles.x, glm::vec3 (1.0f, 0.0f, 0.0f));
-
-	    // the camera object looks down -Z with +Y up in its own space
-	    eye = origin;
-	    center = origin + glm::vec3 (rotation * glm::vec4 (0.0f, 0.0f, -1.0f, 0.0f));
-	    up = glm::vec3 (rotation * glm::vec4 (0.0f, 1.0f, 0.0f, 0.0f));
+	    eye = pose.eye;
+	    center = pose.center;
+	    up = pose.up;
 
 	    // The camera object owns its fov setting. Copy its current value for
 	    // now; camera-object property animation is not wired into Camera yet.

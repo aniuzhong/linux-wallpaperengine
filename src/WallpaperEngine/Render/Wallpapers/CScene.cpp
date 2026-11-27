@@ -525,20 +525,11 @@ void CScene::updateCameraFromObject () {
 	return;
     }
 
-    const glm::vec3 origin = this->m_cameraObject->origin->value->getVec3 ();
-    const glm::vec3 angles = this->m_cameraObject->groupAngles->value->getVec3 ();
+    const CameraPose pose = resolveCameraPose (*this->m_cameraObject);
 
-    // same rotation order as the parser and object transforms: Rz * Ry * Rx
-    glm::mat4 rotation = glm::rotate (glm::mat4 (1.0f), angles.z, glm::vec3 (0.0f, 0.0f, 1.0f));
-    rotation = glm::rotate (rotation, angles.y, glm::vec3 (0.0f, 1.0f, 0.0f));
-    rotation = glm::rotate (rotation, angles.x, glm::vec3 (1.0f, 0.0f, 0.0f));
-
-    // the camera object looks down -Z with +Y up in its own space
-    const glm::vec3 eye = origin;
-    const glm::vec3 center = origin + glm::vec3 (rotation * glm::vec4 (0.0f, 0.0f, -1.0f, 0.0f));
-    const glm::vec3 up = glm::vec3 (rotation * glm::vec4 (0.0f, 1.0f, 0.0f, 0.0f));
-
-    this->m_camera->setStaticTransforms (eye, center, up, this->m_cameraObject->zoom->value->getFloat ());
+    this->m_camera->setStaticTransforms (
+	pose.eye, pose.center, pose.up, this->m_cameraObject->zoom->value->getFloat ()
+    );
 
     if (this->m_cameraObject->hasFov) {
 	this->m_camera->setFov (this->m_cameraObject->fov->value->getFloat ());
