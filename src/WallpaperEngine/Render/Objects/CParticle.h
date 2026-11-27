@@ -253,7 +253,14 @@ private:
     static constexpr int SPRITE_FLOATS_PER_VERTEX = 17;
     static constexpr int ROPE_FLOATS_PER_VERTEX = 26;
 
-    // Transformed origin (screen space to centered space conversion)
+    // True for perspective scenes. 3D scenes author particle origins, sizes,
+    // emitters and control points in world units, so no screen-space
+    // centering/Y-flip must be applied to them. Cursor-linked control points
+    // are not projected into 3D yet and keep their authored offset.
+    bool m_isPerspectiveScene { false };
+
+    // 2D-only origin converted from screen space to centered space. 3D
+    // particles get their origin from resolveWorldMatrix instead.
     glm::vec3 m_transformedOrigin { 0.0f };
 
     // Last known resolution for detecting changes

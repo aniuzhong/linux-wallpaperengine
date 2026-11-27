@@ -53,6 +53,11 @@ CParticle::CParticle (Wallpapers::CScene& scene, const Particle& particle) :
     std::random_device rd;
     m_rng.seed (rd ());
 
+    // 3D scenes use world-space particles while 2D scenes keep the historical
+    // screen-space layer behaviour. The camera projection is fully configured
+    // before scene objects are created, so this is stable for the object's life.
+    this->m_isPerspectiveScene = !scene.getCamera ().isOrthogonal ();
+
     // Read renderer configuration early to determine rendering mode
     if (!m_particle.renderers.empty ()) {
 	const auto& renderer = m_particle.renderers[0];
@@ -152,16 +157,20 @@ void CParticle::setup () {
 	return;
     }
 
-    // Convert origin from screen space to centered space
-    // Projection uses ortho(-width/2, width/2, -height/2, height/2)
-    // but particle origins are in screen space where (0,0) is top-left
     m_lastScreenWidth = getScene ().getCamera ().getWidth ();
     m_lastScreenHeight = getScene ().getCamera ().getHeight ();
 
-    glm::vec3 origin = m_particle.origin->value->getVec3 ();
-    origin.x -= m_lastScreenWidth / 2.0f;
-    origin.y = m_lastScreenHeight / 2.0f - origin.y;
-    m_transformedOrigin = origin;
+    if (!this->m_isPerspectiveScene) {
+	// Convert origin from screen space to centered space.
+	// Projection uses ortho(-width/2, width/2, -height/2, height/2)
+	// but particle origins are in screen space where (0,0) is top-left.
+	glm::vec3 origin = m_particle.origin->value->getVec3 ();
+	origin.x -= m_lastScreenWidth / 2.0f;
+	origin.y = m_lastScreenHeight / 2.0f - origin.y;
+	m_transformedOrigin = origin;
+    }
+    // 3D scenes author the origin in world/local units; resolveWorldMatrix
+    // applies it directly, so no screen-space centering or Y flip is needed.
 
     // Load particle material constants
     if (m_particle.material && m_particle.material->material && !m_particle.material->material->passes.empty ()) {
@@ -193,6 +202,12 @@ void CParticle::setup () {
 
     // Setup control points (max 8)
     m_controlPoints.resize (8);
+
+    // 3D world-space offsets are authored in scene coordinates, so convert
+    // them with the inverse particle transform before using them locally.
+    const glm::mat4 particleWorldInverse
+	= this->m_isPerspectiveScene ? glm::inverse (this->resolveWorldMatrix (this->m_particle)) : glm::mat4 (1.0f);
+
     for (const auto& cp : m_particle.controlPoints) {
 	if (cp.id >= 0 && cp.id < 8) {
 	    m_controlPoints[cp.id].offset = cp.offset;
@@ -200,15 +215,26 @@ void CParticle::setup () {
 	    m_controlPoints[cp.id].linkMouse = (cp.flags & 1) != 0;
 	    m_controlPoints[cp.id].worldSpace = (cp.flags & 2) != 0;
 
-	    // Initialize position to offset for non-mouse-linked control points
-	    // Mouse-linked CPs will have their position updated in update()
-	    if (!m_controlPoints[cp.id].linkMouse) {
-		if (m_controlPoints[cp.id].worldSpace) {
-		    // World space: offset is in screen-centered coords, convert to particle local space
-		    m_controlPoints[cp.id].position = cp.offset - m_transformedOrigin;
+	    // Initialize position to the authored offset for control points that
+	    // are not driven by the cursor. 2D cursor-linked CPs are updated in
+	    // update(); 3D cursor projection is not implemented yet, so they keep
+	    // their authored offset instead of staying at the origin.
+	    if (!m_controlPoints[cp.id].linkMouse || this->m_isPerspectiveScene) {
+		auto& controlPoint = m_controlPoints[cp.id];
+
+		if (controlPoint.worldSpace) {
+		    if (this->m_isPerspectiveScene) {
+			// World-space offsets are absolute scene coordinates; convert
+			// them into the particle's local space so the model matrix does
+			// not apply the offset a second time.
+			controlPoint.position = glm::vec3 (particleWorldInverse * glm::vec4 (cp.offset, 1.0f));
+		    } else {
+			// 2D world-space offsets are in centered screen coordinates.
+			controlPoint.position = cp.offset - m_transformedOrigin;
+		    }
 		} else {
-		    // Local space: offset is already relative to particle system center
-		    m_controlPoints[cp.id].position = cp.offset;
+		    // Local-space offsets are already relative to the particle center.
+		    controlPoint.position = cp.offset;
 		}
 	    }
 	}
@@ -279,48 +305,52 @@ void CParticle::emitParticles (int count) {
 }
 
 void CParticle::update (float dt) {
-    // Detect resolution changes and recalculate transformed origin
-    float screenWidth = static_cast<float> (getScene ().getWidth ());
-    float screenHeight = static_cast<float> (getScene ().getHeight ());
+    // 2D scenes track resolution changes and project the cursor into the
+    // centered screen space. 3D particles are positioned by resolveWorldMatrix;
+    // cursor-linked control points currently keep their authored offset.
+    if (!this->m_isPerspectiveScene) {
+	// Detect resolution changes and recalculate transformed origin
+	float screenWidth = static_cast<float> (getScene ().getWidth ());
+	float screenHeight = static_cast<float> (getScene ().getHeight ());
 
-    if (screenWidth != m_lastScreenWidth || screenHeight != m_lastScreenHeight) {
-	// Resolution changed - recalculate transformed origin
-	glm::vec3 origin = m_particle.origin->value->getVec3 ();
-	origin.x -= screenWidth / 2.0f;
-	origin.y = screenHeight / 2.0f - origin.y;
-	m_transformedOrigin = origin;
+	if (screenWidth != m_lastScreenWidth || screenHeight != m_lastScreenHeight) {
+	    // Resolution changed - recalculate transformed origin
+	    glm::vec3 origin = m_particle.origin->value->getVec3 ();
+	    origin.x -= screenWidth / 2.0f;
+	    origin.y = screenHeight / 2.0f - origin.y;
+	    m_transformedOrigin = origin;
 
-	// Update world-space control points that aren't mouse-linked
-	for (size_t i = 0; i < m_controlPoints.size (); i++) {
-	    auto& cp = m_controlPoints[i];
-	    if (!cp.linkMouse && cp.worldSpace) {
-		// Recalculate position from offset using new transformed origin
-		cp.position = cp.offset - m_transformedOrigin;
+	    // Update world-space control points that aren't mouse-linked
+	    for (size_t i = 0; i < m_controlPoints.size (); i++) {
+		auto& cp = m_controlPoints[i];
+		if (!cp.linkMouse && cp.worldSpace) {
+		    // Recalculate position from offset using new transformed origin
+		    cp.position = cp.offset - m_transformedOrigin;
+		}
 	    }
+
+	    m_lastScreenWidth = screenWidth;
+	    m_lastScreenHeight = screenHeight;
 	}
 
-	m_lastScreenWidth = screenWidth;
-	m_lastScreenHeight = screenHeight;
-    }
+	// Update control points with mouse position
+	const glm::vec2* mousePos = getScene ().getMousePositionNormalized ();
+	if (mousePos) {
+	    for (auto& cp : m_controlPoints) {
+		if (cp.linkMouse) {
+		    // Convert mouse position from normalized [0,1] to centered screen space
+		    glm::vec3 position;
+		    position.x = (mousePos->x * screenWidth) - (screenWidth / 2.0f);
+		    position.y = (screenHeight / 2.0f) - (mousePos->y * screenHeight);
+		    position.z = 0.0f;
 
-    // Update control points with mouse position
-    const glm::vec2* mousePos = getScene ().getMousePositionNormalized ();
-    if (mousePos) {
+		    // Apply control point offset
+		    position += cp.offset;
 
-	for (auto& cp : m_controlPoints) {
-	    if (cp.linkMouse) {
-		// Convert mouse position from normalized [0,1] to centered screen space
-		glm::vec3 position;
-		position.x = (mousePos->x * screenWidth) - (screenWidth / 2.0f);
-		position.y = (screenHeight / 2.0f) - (mousePos->y * screenHeight);
-		position.z = 0.0f;
-
-		// Apply control point offset
-		position += cp.offset;
-
-		// Convert to particle local space to prevent double transformation by model matrix
-		// Both world-space and local-space CPs are handled the same way now
-		cp.position = position - m_transformedOrigin;
+		    // Convert to particle local space to prevent double transformation by model matrix
+		    // Both world-space and local-space CPs are handled the same way now
+		    cp.position = position - m_transformedOrigin;
+		}
 	    }
 	}
     }
@@ -440,8 +470,16 @@ void CParticle::setupEmitters () {
 EmitterFunc CParticle::createBoxEmitter (const ParticleEmitter& emitter) {
     float rate = emitter.rate * m_particle.instanceOverride.rate->value->getFloat ();
 
+    // 2D particle emitters are authored in screen space (Y down), so their
+    // origin and direction must be mirrored into the centered Y-up space.
+    // 3D scenes already author both in world/local Y-up units.
     glm::vec3 transformedEmitterOrigin = emitter.origin;
-    transformedEmitterOrigin.y = -transformedEmitterOrigin.y;
+    glm::vec3 flippedDirections = emitter.directions;
+
+    if (!this->m_isPerspectiveScene) {
+	transformedEmitterOrigin.y = -transformedEmitterOrigin.y;
+	flippedDirections.y = -flippedDirections.y;
+    }
 
     int controlPointIndex = emitter.controlPoint;
     if (controlPointIndex == -1 && !m_particle.controlPoints.empty ()) {
@@ -450,9 +488,6 @@ EmitterFunc CParticle::createBoxEmitter (const ParticleEmitter& emitter) {
 	    controlPointIndex = 0;
 	}
     }
-
-    glm::vec3 flippedDirections = emitter.directions;
-    flippedDirections.y = -flippedDirections.y;
 
     bool limitOnePerFrame = (emitter.flags & 2) != 0;
     bool randomPeriodicEmission = (emitter.flags & 4) != 0;
@@ -593,9 +628,12 @@ EmitterFunc CParticle::createSphereEmitter (const ParticleEmitter& emitter) {
     float rate = emitter.rate * m_particle.instanceOverride.rate->value->getFloat ();
     float lifetime = 1.0f * m_particle.instanceOverride.lifetime->value->getFloat ();
 
-    // Convert emitter origin from screen space (Y down) to centered space (Y up)
+    // 2D emitters are authored in screen space (Y down); 3D emitters already
+    // use the scene's world/local Y-up space.
     glm::vec3 transformedEmitterOrigin = emitter.origin;
-    transformedEmitterOrigin.y = -transformedEmitterOrigin.y;
+    if (!this->m_isPerspectiveScene) {
+	transformedEmitterOrigin.y = -transformedEmitterOrigin.y;
+    }
 
     int controlPointIndex = emitter.controlPoint;
 
@@ -643,9 +681,9 @@ EmitterFunc CParticle::createSphereEmitter (const ParticleEmitter& emitter) {
 	    // Spawn at random position on ellipsoid surface
 	    glm::vec3 randomPos;
 
-	    // Orthographic particles (flags & 4 == 0): use 2D disk distribution in X/Y plane
-	    // Perspective particles (flags & 4 != 0): use 3D spherical shell distribution
-	    if ((m_particle.flags & 4) == 0) {
+	    // 2D scenes with orthographic particles (flags & 4 == 0) use a disk in
+	    // the X/Y plane; 3D scenes always use a spherical shell.
+	    if (!this->m_isPerspectiveScene && (m_particle.flags & 4) == 0) {
 		// 2D disk distribution with random Z offset
 		float angle = WallpaperEngine::Maths::randomFloat (m_rng, 0.0f, glm::two_pi<float> ());
 		float minRadius = emitter.distanceMin.x;
@@ -842,7 +880,10 @@ InitializerFunc CParticle::createVelocityRandomInitializer (const VelocityRandom
     return [this, minValue, maxValue, speedOverride] (ParticleInstance& p) {
 	glm::vec3 vel = WallpaperEngine::Maths::randomVec3 (m_rng, minValue->getVec3 (), maxValue->getVec3 ())
 	    * speedOverride->getFloat ();
-	vel.y = -vel.y;
+	if (!this->m_isPerspectiveScene) {
+	    // 2D velocities are authored in screen space (Y down).
+	    vel.y = -vel.y;
+	}
 	p.velocity += vel;
     };
 }
@@ -901,9 +942,11 @@ InitializerFunc CParticle::createTurbulentVelocityRandomInitializer (const Turbu
 	// Get direction parameters
 	glm::vec3 forward = forwardVal->getVec3 ();
 	glm::vec3 right = rightVal->getVec3 ();
-	// Y-flip for coordinate system conversion
-	forward.y = -forward.y;
-	right.y = -right.y;
+	if (!this->m_isPerspectiveScene) {
+	    // 2D directions are authored in screen space (Y down).
+	    forward.y = -forward.y;
+	    right.y = -right.y;
+	}
 
 	if (glm::length (forward) > 0.0001f) {
 	    forward = glm::normalize (forward);
@@ -968,10 +1011,10 @@ InitializerFunc CParticle::createTurbulentVelocityRandomInitializer (const Turbu
 	    result = rot * result;
 	}
 
-	// For 2D/orthographic particles (flags & 4 == 0), project direction onto XY plane.
-	// curlNoise is 3D but z-drift is meaningless for 2D particles and causes
-	// rope segments to diverge in depth, breaking visual connectivity.
-	if ((m_particle.flags & 4) == 0) {
+	// In 2D scenes, orthographic particles (flags & 4 == 0) stay in the XY
+	// plane. curlNoise is 3D but z-drift is meaningless there and causes rope
+	// segments to diverge in depth, breaking visual connectivity.
+	if (!this->m_isPerspectiveScene && (m_particle.flags & 4) == 0) {
 	    result.z = 0.0f;
 	    float len2d = glm::length (result);
 	    if (len2d > 0.0001f) {
@@ -1022,8 +1065,10 @@ CParticle::createMapSequenceAroundControlPointInitializer (const MapSequenceArou
 	glm::vec3 speedMax = speedMaxValue->getVec3 ();
 	glm::vec3 speed = WallpaperEngine::Maths::randomVec3 (m_rng, speedMin, speedMax);
 
-	// Flip Y before rotation to convert to centered space
-	speed.y = -speed.y;
+	if (!this->m_isPerspectiveScene) {
+	    // Flip Y before rotation to convert to centered space.
+	    speed.y = -speed.y;
+	}
 
 	// Rotate velocity based on sequence angle (creates outward radial pattern)
 	glm::mat3 rotationMatrix = glm::mat3 (
@@ -1085,15 +1130,17 @@ OperatorFunc CParticle::createMovementOperator (const MovementOperator& op) {
     DynamicValue* gravityValue = op.gravity->value.get ();
     DynamicValue* speedOverride = m_particle.instanceOverride.speed->value.get ();
 
-    return [dragValue, gravityValue, speedOverride] (
+    return [this, dragValue, gravityValue, speedOverride] (
 	       std::vector<ParticleInstance>& particles, uint32_t count, const std::vector<ControlPointData>&, float,
 	       float dt
 	   ) {
 	float speed = speedOverride->getFloat ();
 	float drag = dragValue->getFloat ();
 	glm::vec3 gravity = gravityValue->getVec3 ();
-	// Flip gravity Y for centered space
-	gravity.y = -gravity.y;
+	if (!this->m_isPerspectiveScene) {
+	    // 2D gravity is authored in screen space (Y down).
+	    gravity.y = -gravity.y;
+	}
 
 	for (uint32_t i = 0; i < count; i++) {
 	    auto& p = particles[i];
@@ -1896,18 +1943,30 @@ void CParticle::setupParticleUniforms () {
 }
 
 void CParticle::updateMatrices () {
-    glm::vec3 scale = m_particle.scale->value->getVec3 ();
-    glm::vec3 angles = m_particle.angles->value->getVec3 ();
+    if (this->m_isPerspectiveScene) {
+	// 3D particles live in the scene graph like models: origin, scale,
+	// angles and every parent transform are authored in world units.
+	// resolveWorldMatrix also picks up scripted origin/scale/angle updates
+	// (localTransform special-cases Particle exactly for this).
+	m_modelMatrix = this->resolveWorldMatrix (this->m_particle);
+    } else {
+	glm::vec3 scale = m_particle.scale->value->getVec3 ();
+	glm::vec3 angles = m_particle.angles->value->getVec3 ();
 
-    m_modelMatrix = glm::mat4 (1.0f);
-    m_modelMatrix = glm::translate (m_modelMatrix, m_transformedOrigin);
-    this->applyParallaxToModelMatrix ();
+	m_modelMatrix = glm::mat4 (1.0f);
+	m_modelMatrix = glm::translate (m_modelMatrix, m_transformedOrigin);
+	this->applyParallaxToModelMatrix ();
 
-    // Negate X and Z rotations to account for Y-flipped coordinate system
-    m_modelMatrix = glm::rotate (m_modelMatrix, -angles.z, glm::vec3 (0, 0, 1));
-    m_modelMatrix = glm::rotate (m_modelMatrix, angles.y, glm::vec3 (0, 1, 0));
-    m_modelMatrix = glm::rotate (m_modelMatrix, -angles.x, glm::vec3 (1, 0, 0));
-    m_modelMatrix = glm::scale (m_modelMatrix, scale);
+	// Negate X and Z rotations to account for Y-flipped coordinate system
+	m_modelMatrix = glm::rotate (m_modelMatrix, -angles.z, glm::vec3 (0, 0, 1));
+	m_modelMatrix = glm::rotate (m_modelMatrix, angles.y, glm::vec3 (0, 1, 0));
+	m_modelMatrix = glm::rotate (m_modelMatrix, -angles.x, glm::vec3 (1, 0, 0));
+	m_modelMatrix = glm::scale (m_modelMatrix, scale);
+
+	// Per-layer parallax is a 2D compositor concept. 3D scenes move the
+	// camera instead, just like CModel, so no offset is applied above.
+    }
+
     m_modelMatrixInverse = glm::inverse (m_modelMatrix);
 
     this->updateParticleViewProjection ();
@@ -1924,6 +1983,11 @@ void CParticle::updateMatrices () {
 }
 
 void CParticle::applyParallaxToModelMatrix () {
+    // 3D scenes drive parallax through the camera, not per-layer offsets.
+    if (this->m_isPerspectiveScene) {
+	return;
+    }
+
     if (!getScene ().getScene ().camera.parallax.enabled
 	|| getScene ().getContext ().getApp ().getContext ().settings.mouse.disableparallax) {
 	return;
@@ -1952,8 +2016,10 @@ void CParticle::applyParallaxToModelMatrix () {
 }
 
 void CParticle::updateParticleViewProjection () {
-    if ((m_particle.flags & 4) != 0) {
-	// Perspective particles use a dedicated perspective projection
+    if (!this->m_isPerspectiveScene && (m_particle.flags & 4) != 0) {
+	// 2D layers can opt into "perspective particles" with a dedicated
+	// projection. 3D scenes always use the scene camera below, regardless
+	// of the flag.
 	float width = getScene ().getCamera ().getWidth ();
 	float height = getScene ().getCamera ().getHeight ();
 	float aspect = width / height;
@@ -1968,15 +2034,22 @@ void CParticle::updateParticleViewProjection () {
 	m_viewProjectionMatrix = perspectiveProj * perspectiveView;
 	m_eyePosition = glm::vec3 (0.0f, 0.0f, 1000.0f);
     } else {
-	// Orthographic projection from scene camera
+	// Scene camera projection (orthographic for 2D, perspective for 3D).
 	m_viewProjectionMatrix = getScene ().getCamera ().getProjection () * getScene ().getCamera ().getLookAt ();
-	// For 2D/orthographic scenes the camera eye is at (0,0,0). The shader's
-	// ComputeParticleTrailTangents uses cross(eyeDirection, velocity) to
-	// compute the trail ribbon width. With eye at z=0 and particles at z=0,
-	// eyeDirection is purely in XY — the cross product yields a Z-only vector
-	// that is invisible under orthographic projection. Place the eye at z=1000
-	// so the cross product produces a visible XY perpendicular direction.
-	m_eyePosition = glm::vec3 (0.0f, 0.0f, 1000.0f);
+
+	if (this->m_isPerspectiveScene) {
+	    // Trails use the real camera position to compute their ribbon
+	    // tangents, so follow camera paths and scripted camera updates.
+	    m_eyePosition = getScene ().getCamera ().getEye ();
+	} else {
+	    // For 2D/orthographic scenes the camera eye is at (0,0,0). The shader's
+	    // ComputeParticleTrailTangents uses cross(eyeDirection, velocity) to
+	    // compute the trail ribbon width. With eye at z=0 and particles at z=0,
+	    // eyeDirection is purely in XY — the cross product yields a Z-only vector
+	    // that is invisible under orthographic projection. Place the eye at z=1000
+	    // so the cross product produces a visible XY perpendicular direction.
+	    m_eyePosition = glm::vec3 (0.0f, 0.0f, 1000.0f);
+	}
     }
 }
 
