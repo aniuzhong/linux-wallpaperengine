@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 
 #define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/rotate_vector.hpp>
 #undef GLM_ENABLE_EXPERIMENTAL
 
@@ -24,7 +25,6 @@ void CObject::setup () { }
 void CObject::render () { }
 
 bool CObject::isVisibleInTree () const {
-    constexpr int kMaxParentDepth = 32;
     const CObject* current = this;
 
     for (int depth = 0; current != nullptr && depth < kMaxParentDepth; ++depth) {
@@ -79,62 +79,112 @@ int CObject::getId () const { return this->m_object.id; }
 
 const Object& CObject::getObject () const { return this->m_object; }
 
-CObject::ResolvedTransform CObject::localTransform (const Object& object) {
-    glm::vec3 origin = object.origin->value->getVec3 ();
-    auto scale = glm::vec3 (1.0f);
-    float angle = 0.0f;
+CObject::LocalTransform CObject::localTransform (const Object& object) {
+    LocalTransform transform = {
+	.origin = object.origin->value->getVec3 (),
+	.scale = object.groupScale->value->getVec3 (),
+	.angles = object.groupAngles->value->getVec3 (),
+    };
 
     if (object.is<Image> ()) {
 	const auto* image = object.as<Image> ();
-	scale = image->scale->value->getVec3 ();
-	angle = image->angles->value->getVec3 ().z;
+	transform.scale = image->scale->value->getVec3 ();
+	transform.angles = image->angles->value->getVec3 ();
+    } else if (object.is<Particle> ()) {
+	const auto* particle = object.as<Particle> ();
+	transform.scale = particle->scale->value->getVec3 ();
+	transform.angles = particle->angles->value->getVec3 ();
     } else if (object.is<Text> ()) {
 	const auto* text = object.as<Text> ();
-	scale = text->scale->value->getVec3 ();
-    } else {
-	scale = object.groupScale->value->getVec3 ();
-	angle = object.groupAngles->value->getVec3 ().z;
+	transform.scale = text->scale->value->getVec3 ();
     }
 
-    return { origin, scale, angle };
+    return transform;
 }
 
-CObject::ResolvedTransform CObject::resolveTransform (const Object& object) const {
-    constexpr int kMaxParentDepth = 32;
-
-    // Walk up the parent chain leaf-first, bounded by kMaxParentDepth to guard
-    // against cycles. chain[0] is the requested object; the last entry is the root.
-    const Object* chain[kMaxParentDepth + 1];
-    int count = 0;
+CObject::ParentChain CObject::collectParentChain (const Object& object) const {
+    ParentChain chain = {};
     const Object* current = &object;
-    chain[count++] = current;
+
+    chain.objects[chain.count++] = current;
 
     while (current->parent.has_value ()) {
-	if (count > kMaxParentDepth) {
-	    sLog.error ("Parent transform chain is too deep; possible cycle at object id=", current->id);
+	if (chain.count > kMaxParentDepth) {
+	    sLog.error ("Parent chain is too deep; possible cycle at object id=", current->id);
 	    break;
 	}
+
 	const auto* parentObject = this->getScene ().getObject (current->parent.value ());
+
 	if (parentObject == nullptr) {
 	    break;
 	}
+
 	current = &parentObject->getObject ();
-	chain[count++] = current;
+	chain.objects[chain.count++] = current;
     }
+
+    return chain;
+}
+
+CObject::ResolvedTransform CObject::resolveTransform (const Object& object) const {
+    // The 2D compositor only consumes the Z angle. Text layers historically
+    // stay upright in that path even though their group angles are used by the
+    // 3D world matrix, so keep that behaviour explicit here.
+    const auto localAngle = [] (const Object& source, const LocalTransform& transform) {
+	return source.is<Text> () ? 0.0f : transform.angles.z;
+    };
+
+    const ParentChain chain = this->collectParentChain (object);
 
     // Accumulate top-down: the root's local transform is already its resolved
     // transform, then fold each child onto its already-resolved parent.
-    ResolvedTransform resolved = localTransform (*chain[count - 1]);
-    for (int i = count - 2; i >= 0; --i) {
-	ResolvedTransform local = localTransform (*chain[i]);
+    const Object* rootObject = chain.objects[chain.count - 1];
+    const LocalTransform root = localTransform (*rootObject);
+    ResolvedTransform resolved = { root.origin, root.scale, localAngle (*rootObject, root) };
+
+    for (int i = static_cast<int> (chain.count) - 2; i >= 0; --i) {
+	const Object* currentObject = chain.objects[i];
+	const LocalTransform local = localTransform (*currentObject);
+	const float angle = localAngle (*currentObject, local);
 	const glm::vec2 offset = glm::rotate (
 	    glm::vec2 { local.origin.x * resolved.scale.x, local.origin.y * resolved.scale.y }, resolved.angle
 	);
-	local.origin.x = resolved.origin.x + offset.x;
-	local.origin.y = resolved.origin.y + offset.y;
-	local.origin.z = resolved.origin.z + local.origin.z * resolved.scale.z;
-	resolved = { local.origin, local.scale * resolved.scale, local.angle + resolved.angle };
+
+	const glm::vec3 origin = {
+	    resolved.origin.x + offset.x,
+	    resolved.origin.y + offset.y,
+	    resolved.origin.z + local.origin.z * resolved.scale.z,
+	};
+
+	resolved = { origin, local.scale * resolved.scale, angle + resolved.angle };
     }
 
     return resolved;
+}
+
+glm::mat4 CObject::localMatrix (const LocalTransform& transform) {
+    glm::mat4 matrix = glm::translate (glm::mat4 (1.0f), transform.origin);
+
+    // Scene angles are authored as Rz * Ry * Rx in the same convention as the
+    // camera parser. Do not negate X/Z here: doing so flips the orientation of
+    // models whose parent chain carries rotations (e.g. Saturn's ring plane).
+    matrix = glm::rotate (matrix, transform.angles.z, glm::vec3 (0.0f, 0.0f, 1.0f));
+    matrix = glm::rotate (matrix, transform.angles.y, glm::vec3 (0.0f, 1.0f, 0.0f));
+    matrix = glm::rotate (matrix, transform.angles.x, glm::vec3 (1.0f, 0.0f, 0.0f));
+    matrix = glm::scale (matrix, transform.scale);
+
+    return matrix;
+}
+
+glm::mat4 CObject::resolveWorldMatrix (const Object& object) const {
+    const ParentChain chain = this->collectParentChain (object);
+
+    glm::mat4 world = glm::mat4 (1.0f);
+
+    for (int i = static_cast<int> (chain.count) - 1; i >= 0; --i) {
+	world = world * localMatrix (localTransform (*chain.objects[i]));
+    }
+
+    return world;
 }

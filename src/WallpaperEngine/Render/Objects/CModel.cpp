@@ -125,7 +125,7 @@ bool CModel::needsDepthSort () const {
     return false;
 }
 
-glm::vec3 CModel::getWorldOrigin () const { return this->resolveTransform (this->m_model).origin; }
+glm::vec3 CModel::getWorldOrigin () const { return glm::vec3 (this->resolveWorldMatrix (this->m_model)[3]); }
 
 float CModel::getWorldOriginY () const { return this->getWorldOrigin ().y; }
 
@@ -296,22 +296,9 @@ void CModel::updateModelMatrix () {
 	return;
     }
 
-    // models need the full three axis rotation, resolveTransform folds the
-    // parent chain but keeps a single z angle, so the local part is recomputed
-    // here mirroring CParticle::updateMatrices
-    const CObject::ResolvedTransform transform = this->resolveTransform (this->m_model);
-
-    const glm::vec3 origin = transform.origin;
-    const glm::vec3 scale = transform.scale;
-    const glm::vec3 angles = this->m_model.groupAngles->value->getVec3 ();
-
-    this->m_modelMatrix = glm::mat4 (1.0f);
-    this->m_modelMatrix = glm::translate (this->m_modelMatrix, origin);
-    // Negate X and Z rotations to account for Y-flipped coordinate system
-    this->m_modelMatrix = glm::rotate (this->m_modelMatrix, -angles.z, glm::vec3 (0, 0, 1));
-    this->m_modelMatrix = glm::rotate (this->m_modelMatrix, angles.y, glm::vec3 (0, 1, 0));
-    this->m_modelMatrix = glm::rotate (this->m_modelMatrix, -angles.x, glm::vec3 (1, 0, 0));
-    this->m_modelMatrix = glm::scale (this->m_modelMatrix, scale);
+    // Full XYZ parent-chain transform so rotated groups (Saturn's tilt/spin,
+    // turntables, etc.) affect their model children.
+    this->m_modelMatrix = this->resolveWorldMatrix (this->m_model);
     // the reflection pass renders the world mirrored over the mirror plane
     // with the original camera, which is what a planar mirror shows
     this->m_modelMatrix = this->m_reflectionTransform * this->m_modelMatrix;

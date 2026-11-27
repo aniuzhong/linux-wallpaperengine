@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <initializer_list>
 #include <string>
 
@@ -66,6 +68,16 @@ protected:
     };
 
     /**
+     * The object's own transform, expressed in its parent's space. `angles`
+     * keeps all three axes; the 2D compositor consumes only Z.
+     */
+    struct LocalTransform {
+	glm::vec3 origin;
+	glm::vec3 scale;
+	glm::vec3 angles;
+    };
+
+    /**
      * Folds the object's parent chain (bounded, cycle-guarded) into a single
      * origin/scale/angle. Parents are created before their children
      * (CScene::createObject), so every link resolves here.
@@ -73,12 +85,37 @@ protected:
     [[nodiscard]] ResolvedTransform resolveTransform (const Object& object) const;
 
     /**
-     * Computes the object's own transform (origin/scale/angle) without walking the
-     * parent chain. Used as the per-node step of resolveTransform.
+     * Folds the full parent chain into a 4x4 local-to-world matrix. Unlike
+     * resolveTransform (which keeps a single Z angle for the 2D compositor),
+     * this keeps all three rotation axes so 3D children of rotated groups get
+     * the correct world transform.
      */
-    [[nodiscard]] static ResolvedTransform localTransform (const Object& object);
+    [[nodiscard]] glm::mat4 resolveWorldMatrix (const Object& object) const;
+
+    /**
+     * Computes the object's own transform without walking the parent chain.
+     * Typed objects (image/particle/text) keep their own scale/angle fields;
+     * generic objects use the group fields on ObjectData.
+     */
+    [[nodiscard]] static LocalTransform localTransform (const Object& object);
+
+    /** Builds a local-to-parent matrix from a resolved local transform. */
+    [[nodiscard]] static glm::mat4 localMatrix (const LocalTransform& transform);
 
 private:
+    static constexpr int kMaxParentDepth = 32;
+
+    /**
+     * The object followed by its parents, leaf-first. Bounded by
+     * kMaxParentDepth so a malformed scene cannot loop forever.
+     */
+    struct ParentChain {
+	std::array<const Object*, kMaxParentDepth + 1> objects = {};
+	std::size_t count = 0;
+    };
+
+    [[nodiscard]] ParentChain collectParentChain (const Object& object) const;
+
     Wallpapers::CScene& m_scene;
     const Object& m_object;
 };
